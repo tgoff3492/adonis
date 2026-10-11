@@ -109,6 +109,18 @@ const PERSONAS = [
    a:{goal:"general",experience:"1",days:"3",time:"45",where:"home",home:["none"],around:["none"],emphasis:"none"}},
   {id:"six", name:"Advanced, 6 days", who:"Gym, building muscle, arm focus, long sessions",
    a:{goal:"muscle",experience:"3",days:"6",time:"75",where:"gym",around:["none"],emphasis:"arms"}},
+  {id:"func-adv", name:"Functional fitness, advanced", who:"Gym, 4 days, 60 minutes, CrossFit-style",
+   a:{track:"functional",goal:"general",experience:"3",days:"4",time:"60",where:"gym",around:["none"]}},
+  {id:"func-home", name:"Functional fitness at home, beginner", who:"Light dumbbells, bands and a kettlebell, 3 days, 30 minutes",
+   a:{track:"functional",goal:"fatloss",experience:"1",days:"3",time:"30",where:"home",home:["db_light","band","kb"],around:["none"]}},
+  {id:"cardio-run", name:"Runner building endurance", who:"Runs and rides, 5 days, 60 minutes",
+   a:{track:"cardio",goal:"endurance",experience:"2",days:"5",time:"60",where:"gym",around:["none"],cardio:["run","bike"]}},
+  {id:"cardio-preg", name:"Pregnant runner, 2nd trimester", who:"Ran hard before pregnancy, runs and swims, 4 days",
+   a:{track:"cardio",goal:"general",experience:"3",days:"4",time:"45",where:"home",home:["db_full"],around:["pregnant"],dueDate:dueIn(22),prePreg:"3",cardio:["run","swim"]}},
+  {id:"cardio-pp", name:"Postpartum, 4 months, wants to run", who:"Walks and runs, 3 days, 45 minutes",
+   a:{track:"cardio",goal:"fatloss",experience:"2",days:"3",time:"45",where:"home",home:["none"],around:["postpartum"],since:"3m",cardio:["run","walk"]}},
+  {id:"hybrid", name:"Hybrid lifter and rower", who:"Gym, 5 days, 60 minutes, building muscle",
+   a:{track:"hybrid",goal:"muscle",experience:"2",days:"5",time:"60",where:"gym",around:["none"],cardio:["row","run"],emphasis:"none"}},
   {id:"shoulder", name:"Shoulders and wrists", who:"Gym, building muscle, 5 days",
    a:{goal:"muscle",experience:"2",days:"5",time:"60",where:"gym",around:["shoulders","wrists"],emphasis:"none"}},
 ];
@@ -120,6 +132,7 @@ const LBL = {
   around:{shoulders:"Shoulders",lowback:"Lower back",knees:"Knees",wrists:"Elbows/wrists",pelvic:"Pelvic floor",pregnant:"Pregnant",postpartum:"Postpartum",none:"Nothing to plan around"},
   since:{lt6:"Under 6 weeks",["6w"]:"6 weeks to 3 months",["3m"]:"3 to 6 months",["6m"]:"6 to 12 months"},
   prePreg:{1:"Trained: not much",2:"Trained: moderate",3:"Trained: hard"},
+  track:{lift:"Lifting",functional:"Functional",cardio:"Cardio",hybrid:"Hybrid"},
   emphasis:{none:"No emphasis",upper:"Upper focus",lower:"Lower focus",arms:"Arm focus",glutes:"Glute focus",core:"Core focus"},
 };
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -128,20 +141,25 @@ function saveFB(){ try{ localStorage.setItem("adonis-lab", JSON.stringify(FB)) }
 const WEEK = {};
 
 function chips(a){
-  const c = [LBL.goal[a.goal], LBL.experience[a.experience], a.days+" days", a.time+" min", LBL.where[a.where]];
+  const c = [LBL.track[a.track||"lift"], LBL.goal[a.goal] || (a.goal==="endurance"?"Build endurance":""), LBL.experience[a.experience], a.days+" days", a.time+" min", LBL.where[a.where]];
   if(a.where==="home") (a.home||[]).forEach(h=>c.push(LBL.home[h]));
   (a.around||[]).forEach(x=>c.push(LBL.around[x]));
   if(a.dueDate){ const t = E.trimesterFor(a); c.push(["","1st","2nd","3rd"][t]+" trimester by end of block"); }
   if(a.prePreg) c.push(LBL.prePreg[a.prePreg]);
   if(a.since) c.push(LBL.since[a.since]);
   if(a.emphasis) c.push(LBL.emphasis[a.emphasis]);
+  (a.cardio||[]).forEach(m=>c.push({run:"Running",bike:"Cycling",row:"Rowing",swim:"Swimming",walk:"Walking",elliptical:"Elliptical"}[m]));
   return c.filter(Boolean).map(x=>`<span class="chip">${esc(x)}</span>`).join("");
 }
 function renderOne(P){
   const plan = E.generate(P.a), issues = E.audit(plan), w = WEEK[P.id] || 1, f = FB[P.id] || {};
   const days = plan.days.map((d,i)=> d.rest
     ? `<div class="day rest"><div class="d">Day ${i+1}</div><b>${esc(d.name)}</b></div>`
-    : `<div class="day"><div class="d">Day ${i+1}</div><b>${esc(d.name)}</b><ol>${d.ex.map(e=>`<li>${esc(e.n)}${e.pair?` (${e.pair})`:""} <span>${e.wk[w-1].s} × ${esc(e.wk[w-1].r)}</span></li>`).join("")}</ol></div>`).join("");
+    : `<div class="day"><div class="d">Day ${i+1}</div><b>${esc(d.name)}</b><ol>${d.ex.map(e=>{
+        const W = e.wk[w-1];
+        if(e.type==="cardio") return `<li>${esc(e.n)} <span>${esc(W.r)}</span><br><small style="color:var(--muted)">${esc(W.how)}</small></li>`;
+        if(e.type==="circuit") return `<li>Circuit <span>${esc(W.fmt)}</span><br><small style="color:var(--muted)">${W.moves.map(m=>esc(m.r+" "+m.n)).join(", ")}</small></li>`;
+        return `<li>${esc(e.n)}${e.pair?` (${e.pair})`:""} <span>${W.s} × ${esc(W.r)}</span>${W.t?`<br><small style="color:var(--muted)">${esc(W.t)}</small>`:""}</li>`; }).join("")}</ol></div>`).join("");
   return `<article class="p" id="p-${P.id}">
     <div class="ph"><h2>${esc(P.name)}</h2>${issues.length?`<span class="check bad">${issues.length} rule problem${issues.length>1?"s":""}</span>`:`<span class="check ok">Passes auto-check</span>`}</div>
     <div class="who">${esc(P.who)}</div>
@@ -221,7 +239,7 @@ function renderM(P){
     <div class="ph"><h2>${esc(P.name)}</h2><span class="check ok">${Math.round(dp.total.cal).toLocaleString()} of ${T.cal.toLocaleString()} cal</span></div>
     <div class="who">${esc(P.who)} Targets: P ${T.protein} · C ${T.carbs} · F ${T.fat}. This day: P ${Math.round(dp.total.p)} (${pct(dp.total.p,T.protein)}) · C ${Math.round(dp.total.c)} (${pct(dp.total.c,T.carbs)}) · F ${Math.round(dp.total.f)} (${pct(dp.total.f,T.fat)})</div>
     <div class="weeks" role="group" aria-label="Day">${[0,1,2,3,4,5,6].map(n=>`<button data-mp="${P.id}" data-md="${n}" aria-pressed="${n===d}">Day ${n+1}</button>`).join("")}</div>
-    <div class="days">${dp.meals.map(m=>`<div class="day"><div class="d">${esc(m.label)} · ${Math.round(m.cal)} cal</div><b>${esc(m.name)}</b><ol>${m.items.map(it=>`<li>${esc(MPL.amountLine(it.ing,it.g))}</li>`).join("")}</ol></div>`).join("")}</div>
+    <div class="days">${dp.meals.map(m=>`<div class="day"><div class="d">${esc(m.label)} · ${Math.round(m.cal)} cal</div><b>${esc(m.name)}</b><ol>${m.items.map(it=>`<li>${esc(MPL.amountLine(it.ing,it.g,it.side))}</li>`).join("")}</ol></div>`).join("")}</div>
     <div class="fb">
       <div class="verdict"><button class="good" data-p="${P.id}" data-v="good" aria-pressed="${f.v==="good"}">Looks good</button><button class="fix" data-p="${P.id}" data-v="fix" aria-pressed="${f.v==="fix"}">Needs changes</button></div>
       <textarea data-note="${P.id}" placeholder="What would you change?">${esc(f.note||"")}</textarea>

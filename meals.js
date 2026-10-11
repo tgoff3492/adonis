@@ -370,7 +370,14 @@ function withFlavor(m, slot, pr) {
   const items = m.items.slice();
   if (sauce) items.push({ ing: sauceIng(sauce), g: SAUCES[sauce].g, r: "x", sauce: 1 });
   const name = P && m.nm ? m.nm.replace("{f}", P.label) : m.name;
-  return { ...m, items, name, fl, P, sauce, flavors: fls };
+  // sides to fall back on when the main dish alone can't reach the targets without silly portions
+  const b = blockedTags(pr), dis = dislikedIngs(pr), have = new Set(m.items.map(i => i.ing));
+  const okIng = i => !have.has(i) && !dis.has(i) && !ING[i].tags.some(t => b.has(t));
+  const sides = {
+    c: (m.slot === "m" ? ["rice", "potato", "corntort", "bread", "quinoa", "apple"] : ["banana", "apple", "bread", "berries", "ricecake"]).find(okIng),
+    p: ["whey", "greek", "pea", "edamame", "whites"].find(okIng)
+  };
+  return { ...m, items, name, fl, P, sauce, flavors: fls, sides };
 }
 
 /* ---------- portion solver ----------
@@ -382,33 +389,72 @@ function macrosOf(items) {
   return t;
 }
 function roundG(ing, g) {
-  const u = ING[ing].unit;
-  if (u) { const step = u.g / (u.n === "scoop" ? 2 : 1); return Math.max(step, Math.round(g / step) * step); }
-  if (ING[ing].f > 90 || g < 30) return Math.max(5, Math.round(g / 5) * 5);
-  return Math.max(10, Math.round(g / 10) * 10);
+  const u = ING[ing].unit, max = MAXG[ing];
+  if (u) { const step = u.g / (u.n === "scoop" ? 2 : 1); let r = Math.max(step, Math.round(g / step) * step); while (max && r > max && r > step) r -= step; return r; }
+  const cap = v => (max ? Math.min(max, v) : v);
+  if (ING[ing].f > 90 || g < 30) return cap(Math.max(5, Math.round(g / 5) * 5));
+  return cap(Math.max(10, Math.round(g / 10) * 10));
 }
-function scaleMeal(m, target) {
+/* most a real person would eat of one thing in one meal (grams) */
+const MAXG = { banana: 236, apple: 270, berries: 250, honey: 25, sweetpot: 350, potato: 400, blackbeans: 200, chickpeas: 200,
+  lentils: 300, rice: 300, brownrice: 300, quinoa: 300, pasta: 300, oats: 100, bread: 128, tortilla: 135, corntort: 104, pita: 128,
+  granola: 80, ricecake: 45, cottage: 350, greek: 320, hummus: 90, almonds: 40, pb: 40, chia: 30, avocado: 100, oil: 25, cheddar: 50,
+  mozz: 56, edamame: 250, milk: 360, whey: 45, pea: 45, jerky: 60, egg: 200, whites: 300, tofu: 300, tempeh: 200,
+  chicken: 230, turkey93: 230, beef93: 230, pork: 230, salmon: 230, cod: 260, shrimp: 260, tuna: 200, deliturkey: 170, feta: 50, parm: 20 };
+/* least that still reads as a real portion (grams); smaller amounts get bumped up and the rest of the day absorbs it */
+const MING = { chicken: 85, turkey93: 85, beef93: 85, pork: 85, salmon: 85, cod: 85, shrimp: 85, tuna: 70, deliturkey: 55, jerky: 20,
+  egg: 50, whites: 60, greek: 100, cottage: 110, tofu: 100, tempeh: 85, edamame: 75, lentils: 100, blackbeans: 60, chickpeas: 60,
+  rice: 75, brownrice: 75, quinoa: 75, pasta: 100, oats: 30, potato: 100, sweetpot: 100, bread: 32, tortilla: 45, corntort: 52, pita: 40,
+  granola: 20, ricecake: 9, banana: 59, apple: 90, berries: 50, avocado: 25, almonds: 10, pb: 8, oil: 5, cheddar: 14, mozz: 14,
+  feta: 14, parm: 5, hummus: 30, chia: 5, honey: 5, whey: 15, pea: 15, milk: 100, cocoa: 3 };
+function solve(items, target, slot) {
   const roles = ["p", "c", "f"];
-  const base = {}; roles.forEach(r => { base[r] = macrosOf(m.items.filter(i => i.r === r)); });
-  const fixed = macrosOf(m.items.filter(i => i.r === "x"));
+  const base = {}; roles.forEach(r => { base[r] = macrosOf(items.filter(i => i.r === r)); });
+  const fixed = macrosOf(items.filter(i => i.r === "x"));
   const s = { p: 1, c: 1, f: 1 };
   const W = { p: 3, c: 1, f: 2 }; // protein matters most, then fat, then carbs
-  const has = r => base[r].cal > 0;
   for (let it = 0; it < 60; it++) {
     roles.forEach(r => {
-      if (!has(r)) return;
+      if (!(base[r].cal > 0)) return;
       // 1-D best step for this group via derivative of the quadratic
       let num = 0, den = 0;
       ["p", "c", "f"].forEach(k => {
         const other = fixed[k] + roles.filter(x => x !== r).reduce((a, x) => a + base[x][k] * s[x], 0);
         num += W[k] * base[r][k] * (target[k] - other); den += W[k] * base[r][k] * base[r][k];
       });
-      const lo = { p: 0.4, c: 0.15, f: 0.25 }[r], hi = { p: 3, c: 4.5, f: 2.5 }[r];
+      // mains keep a real piece of protein; nothing gets silly-small or huge
+      const lo = { p: slot === "m" ? 0.75 : 0.5, c: 0.15, f: 0.25 }[r], hi = { p: 3, c: 4.5, f: 2.5 }[r];
       if (den > 0) s[r] = Math.max(lo, Math.min(hi, num / den));
     });
   }
-  const items = m.items.map(i => ({ ing: i.ing, g: i.sauce ? i.g : roundG(i.ing, i.r === "x" ? i.g : i.g * s[i.r]), ...(i.sauce ? { sauce: 1 } : {}) })).filter(i => i.g > 0);
-  return { id: m.id, name: m.name, items, ...macrosOf(items) };
+  return s;
+}
+function fitItems(items, target, slot) {
+  items = items.map(i => ({ ...i }));
+  // solve, then pin anything past a sensible max and solve again for the rest
+  for (let round = 0; round < 4; round++) {
+    const s = solve(items, target, slot);
+    let pinned = false;
+    items.forEach(i => {
+      if (i.r === "x" || i.sauce) return;
+      const g = i.g * s[i.r], max = MAXG[i.ing], min = MING[i.ing];
+      if (max && g > max) { i.g = max; i.r = "x"; pinned = true; }
+      else if (min && g < min) { i.g = min; i.r = "x"; pinned = true; }
+    });
+    if (!pinned || round === 3)
+      return items.map(i => ({ ing: i.ing, g: i.sauce ? i.g : roundG(i.ing, i.r === "x" ? i.g : i.g * s[i.r]), ...(i.sauce ? { sauce: 1 } : {}), ...(i.side ? { side: 1 } : {}) })).filter(i => i.g > 0);
+  }
+}
+function scaleMeal(m, target) {
+  let items = m.items.map(i => ({ ...i }));
+  let out = fitItems(items, target, m.slot);
+  // still well short after the caps? add a simple side
+  if (m.sides) {
+    let mac = macrosOf(out);
+    if (m.sides.c && target.c - mac.c > 15) { items.push({ ing: m.sides.c, g: 100, r: "c", side: 1 }); out = fitItems(items, target, m.slot); mac = macrosOf(out); }
+    if (m.sides.p && target.p - mac.p > (items.some(i => i.side) ? 20 : 12)) { items.push({ ing: m.sides.p, g: 100, r: "p", side: 1 }); out = fitItems(items, target, m.slot); }
+  }
+  return { id: m.id, name: m.name, items: out, ...macrosOf(out) };
 }
 
 /* ---------- friendly numbers ---------- */
@@ -459,6 +505,8 @@ function recipe(fm, items) {
     if (s === "{starch}") { steps.push(items.some(it => it.ing === "sweetpot") ? SWEET_STARCH : STARCH); return; }
     steps.push(s.replace("{season}", season).replace("{liquid}", liquid));
   });
+  const sideIts = items.filter(it => it.side);
+  if (sideIts.length) steps.push(`On the side: ${sideIts.map(it => amountLine(it.ing, it.g)).join(" and ")}.${sideIts.some(it => GRAIN[it.ing]) ? " Use leftover or microwave-pouch grains to keep it easy." : ""}`);
   if (fm.sauce) {
     const S = SAUCES[fm.sauce];
     if (S.ing) { /* cocoa is stirred in via {season} */ }
@@ -590,7 +638,8 @@ function firstFlavor(id, pr, seed) { const m = getMeal(id, pr), fls = m ? flavor
 function nextFlavor(id, fl, pr) { const m = getMeal(id, pr), fls = m ? flavorsFor(m, pr) : []; if (fls.length < 2) return fl; return fls[(fls.indexOf(fl) + 1) % fls.length]; }
 
 /* ---------- friendly amounts + shopping ---------- */
-function amountLine(ing, g) {
+function amountLine(ing, g, side) {
+  if (side) return amountLine(ing, g) + " (on the side)";
   const x = ING[ing];
   if (x.sauce) { const S = SAUCES[x.sauce]; return `${frac(g / 15, 0.5)} tbsp ${lc(S.name)}${S.recipe ? " (recipe below)" : ""}`; }
   if (ing === "cocoa") return `${frac(g / 5, 0.5)} tbsp unsweetened cocoa powder`;
