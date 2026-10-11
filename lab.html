@@ -74,11 +74,15 @@ textarea{width:100%;min-height:70px;border:1px solid var(--line);border-radius:8
   <h1 style="margin-top:34px">Nutrition</h1>
   <p class="lead">Daily targets the Eat tab would set for each test person. Check that calories and macros look sensible for the body and goal.</p>
   <div id="nlist"></div>
+  <h1 style="margin-top:34px">Meal plans</h1>
+  <p class="lead">One week of meals per test person, sized to their targets. Check that the meals fit their diet and that portions look like real food.</p>
+  <div id="mlist"></div>
 </div>
 <div class="bar"><div class="in"><span class="s" id="sum"></span><button id="copy">Copy my feedback</button></div></div>
 
 <script src="engine.js"></script>
 <script src="nutrition.js"></script>
+<script src="meals.js"></script>
 <script>
 const E = window.AdonisEngine;
 const dueIn = weeksPregnant => { const d = new Date(); d.setDate(d.getDate() + Math.round((40 - weeksPregnant) * 7)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
@@ -198,9 +202,34 @@ function renderN(P){
       <textarea data-note="${P.id}" placeholder="What would you change?">${esc(f.note||"")}</textarea>
     </div></article>`;
 }
-const ALL = () => [...PERSONAS, ...NPERSONAS];
-function renderAny(P){ return P.p ? renderN(P) : renderOne(P); }
-function render(){ document.getElementById("list").innerHTML = PERSONAS.map(renderOne).join(""); document.getElementById("nlist").innerHTML = NPERSONAS.map(renderN).join(""); updateSum(); }
+const MPL = window.AdonisMeals;
+const MPERSONAS = [
+  {id:"m-man", name:"Man cutting, eats anything", who:"3 meals and a snack, cooks most days.", n:"n-man-cut", pr:{meals:4,style:"none",allergies:[],dislikes:[],cooking:"daily",people:1}},
+  {id:"m-preg", name:"Pregnant, 20 weeks", who:"3 meals and 2 snacks, cooks most days. Pregnancy food rules apply.", n:"n-preg20", pr:{meals:5,style:"none",allergies:[],dislikes:["mushrooms"],cooking:"daily",people:2,pregnant:true}},
+  {id:"m-vegan", name:"Vegan, soy-free", who:"3 meals and a snack, minimal cooking.", n:"n-woman-maint", pr:{meals:4,style:"vegan",allergies:["soy"],dislikes:[],cooking:"minimal",people:1}},
+  {id:"m-family", name:"Batch prep for a family of 6", who:"3 meals, batch preps twice a week, cooks for 6.", n:"n-man-cut", pr:{meals:3,style:"none",allergies:[],dislikes:["beans"],cooking:"batch",people:6}},
+  {id:"m-gfdf", name:"Gluten-free and dairy-free", who:"3 meals and 2 snacks, cooks most days.", n:"n-skinny", pr:{meals:5,style:"none",allergies:["gluten","dairy"],dislikes:[],cooking:"daily",people:1}},
+];
+const MDAY = {};
+function renderM(P){
+  const np = NPERSONAS.find(x=>x.id===P.n), r = NUT.compute(np.p, {today:isoToday, trainingDays:np.td});
+  const T = {protein:r.protein, carbs:r.carbs, fat:r.fat, cal:r.cal};
+  const pr = {...P.pr, targets:T}, wk = MPL.planWeek(pr, isoToday), d = MDAY[P.id] || 0;
+  const dp = MPL.dayPortions(wk.days[d], T, pr), f = FB[P.id] || {};
+  const pct = (a,b) => `${a>=b?"+":""}${Math.round((a-b)/b*100)}%`;
+  return `<article class="p" id="p-${P.id}">
+    <div class="ph"><h2>${esc(P.name)}</h2><span class="check ok">${Math.round(dp.total.cal).toLocaleString()} of ${T.cal.toLocaleString()} cal</span></div>
+    <div class="who">${esc(P.who)} Targets: P ${T.protein} · C ${T.carbs} · F ${T.fat}. This day: P ${Math.round(dp.total.p)} (${pct(dp.total.p,T.protein)}) · C ${Math.round(dp.total.c)} (${pct(dp.total.c,T.carbs)}) · F ${Math.round(dp.total.f)} (${pct(dp.total.f,T.fat)})</div>
+    <div class="weeks" role="group" aria-label="Day">${[0,1,2,3,4,5,6].map(n=>`<button data-mp="${P.id}" data-md="${n}" aria-pressed="${n===d}">Day ${n+1}</button>`).join("")}</div>
+    <div class="days">${dp.meals.map(m=>`<div class="day"><div class="d">${esc(m.label)} · ${Math.round(m.cal)} cal</div><b>${esc(m.name)}</b><ol>${m.items.map(it=>`<li>${esc(MPL.amountLine(it.ing,it.g))}</li>`).join("")}</ol></div>`).join("")}</div>
+    <div class="fb">
+      <div class="verdict"><button class="good" data-p="${P.id}" data-v="good" aria-pressed="${f.v==="good"}">Looks good</button><button class="fix" data-p="${P.id}" data-v="fix" aria-pressed="${f.v==="fix"}">Needs changes</button></div>
+      <textarea data-note="${P.id}" placeholder="What would you change?">${esc(f.note||"")}</textarea>
+    </div></article>`;
+}
+const ALL = () => [...PERSONAS, ...NPERSONAS, ...MPERSONAS];
+function renderAny(P){ return P.pr ? renderM(P) : P.p ? renderN(P) : renderOne(P); }
+function render(){ document.getElementById("list").innerHTML = PERSONAS.map(renderOne).join(""); document.getElementById("nlist").innerHTML = NPERSONAS.map(renderN).join(""); document.getElementById("mlist").innerHTML = MPERSONAS.map(renderM).join(""); updateSum(); }
 function updateSum(){
   const done = ALL().filter(P=>FB[P.id] && FB[P.id].v).length;
   const fix = ALL().filter(P=>FB[P.id] && FB[P.id].v==="fix").length;
@@ -208,6 +237,7 @@ function updateSum(){
 }
 document.addEventListener("click", e=>{
   const t = e.target.closest("button"); if(!t) return;
+  if(t.dataset.md){ MDAY[t.dataset.mp] = +t.dataset.md; const P = MPERSONAS.find(x=>x.id===t.dataset.mp); document.getElementById("p-"+P.id).outerHTML = renderM(P); return; }
   if(t.dataset.w){ WEEK[t.dataset.p] = +t.dataset.w; const P = PERSONAS.find(x=>x.id===t.dataset.p); const el = document.getElementById("p-"+P.id); el.outerHTML = renderOne(P); return; }
   if(t.dataset.v){ const id=t.dataset.p; FB[id] = FB[id]||{}; FB[id].v = FB[id].v===t.dataset.v ? "" : t.dataset.v; saveFB();
     const P = ALL().find(x=>x.id===id); document.getElementById("p-"+id).outerHTML = renderAny(P); return; }

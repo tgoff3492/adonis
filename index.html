@@ -161,6 +161,22 @@ details.notes ul{margin:6px 0 0;padding-left:18px}
 .kv{display:grid;grid-template-columns:minmax(110px,auto) 1fr;gap:6px 12px;font-size:15px;margin:0}
 .kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 
+.meal{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.meal .lab{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.meal .nm{font:600 20px/1.15 var(--display);margin:2px 0}
+.meal .mac{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.meal ul{margin:8px 0 0;padding-left:18px;font-size:14px}
+.meal details{margin-top:6px;font-size:14px}
+.meal details summary{cursor:pointer;color:var(--ink);font-weight:600}
+.meal .acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.meal .linkbtn.done{background:var(--cal);border-color:var(--cal);color:#fff}
+.mtools{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+.glist label{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:15px}
+.glist label:first-of-type{border-top:0}
+.glist input{width:20px;height:20px;flex:none}
+.glist .amt{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.glist label.got span:first-of-type{text-decoration:line-through;color:var(--muted)}
+
 /* ---------- home ---------- */
 #home{position:fixed;inset:0;z-index:50;background:#18202C;color:#ECEEEA;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:env(safe-area-inset-top,0px) 24px env(safe-area-inset-bottom,0px);text-align:center}
 #home .logo{width:min(56vw,240px);height:auto;display:block}
@@ -212,12 +228,14 @@ body.on-home{overflow:hidden}
 
 <script src="engine.js"></script>
 <script src="nutrition.js"></script>
+<script src="meals.js"></script>
 <script>
 const DEFAULTS = {start:todayStr(), cal:2400, protein:175, carbs:265, fat:70, goalWeight:175, goalBf:15, goalDate:""};
 const RECOVERY = ["Walking","Yoga","Stretching","Mobility","Hiking","Foam rolling","Biking"];
 
 /* ---------- state ---------- */
-let S = {settings:{...DEFAULTS}, days:{}, plan:null, profile:{}, nutri:null, blockSeen:{}};
+let S = {settings:{...DEFAULTS}, days:{}, plan:null, profile:{}, nutri:null, blockSeen:{}, mealplan:null};
+const MP = window.AdonisMeals;
 const N = window.AdonisNutrition;
 const E = window.AdonisEngine;
 let cur = todayStr();
@@ -251,7 +269,7 @@ function isBW(name, e){ const x = E && E.BY_NAME[name]; return x ? (x.eq.length=
 
 /* ---------- storage ---------- */
 function cacheLocal(){try{localStorage.setItem("adonis-v1", JSON.stringify(S))}catch(e){}}
-function loadLocal(){try{const r=localStorage.getItem("adonis-v1");if(r){const o=JSON.parse(r);S={settings:{...DEFAULTS,...o.settings},days:o.days||{},plan:o.plan||null,profile:o.profile||{},nutri:o.nutri||null,blockSeen:o.blockSeen||{}}}}catch(e){}}
+function loadLocal(){try{const r=localStorage.getItem("adonis-v1");if(r){const o=JSON.parse(r);S={settings:{...DEFAULTS,...o.settings},days:o.days||{},plan:o.plan||null,profile:o.profile||{},nutri:o.nutri||null,blockSeen:o.blockSeen||{},mealplan:o.mealplan||null}}}catch(e){}}
 function setStatus(t){$("#status").textContent=t}
 const timers = {};
 function saveDay(d){
@@ -264,6 +282,16 @@ function saveSettings(){
 }
 
 /* ---------- backup ---------- */
+function markBackup(){ S.settings.lastBackup = todayStr(); S.settings.backupSnooze = ""; cacheLocal(); render(); }
+function backupBanner(){
+  const logged = Object.keys(S.days).length;
+  if(logged < 3) return "";
+  const last = S.settings.lastBackup, sn = S.settings.backupSnooze;
+  if(sn && diff(todayStr(), sn) < 3) return "";
+  const days = last ? diff(todayStr(), last) : null;
+  if(days !== null && days < 14) return "";
+  return `<div class="msg adj"><p>${days===null ? "You haven't backed up yet." : `It's been ${days} days since your last backup.`} Your logs live only on this phone, so a backup keeps them safe.</p><div class="acts"><button class="linkbtn go" id="export">Save backup</button><button class="linkbtn" data-act="backup-later">Later</button></div></div>`;
+}
 async function exportData(){
   const name = `adonis-backup-${todayStr()}.json`;
   const blob = new Blob([JSON.stringify({app:"adonis",version:1,exported:new Date().toISOString(),...S},null,1)],{type:"application/json"});
@@ -271,14 +299,14 @@ async function exportData(){
     const file = new File([blob], name, {type:"application/json"});
     if(navigator.canShare && navigator.canShare({files:[file]})){
       await navigator.share({files:[file], title:"Adonis backup"});
-      setStatus("Backup shared"); return;
+      markBackup(); setStatus("Backup saved"); return;
     }
   }catch(e){ if(e && e.name==="AbortError") return; }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
-  setStatus("Backup downloaded");
+  markBackup(); setStatus("Backup downloaded");
 }
 async function importData(file){
   try{
@@ -291,6 +319,7 @@ async function importData(file){
     if(o.plan) S.plan = o.plan;
     if(o.profile) S.profile = {...S.profile, ...o.profile};
     if(o.nutri) S.nutri = o.nutri;
+    if(o.mealplan) S.mealplan = o.mealplan;
     cacheLocal(); render(); setStatus("Backup restored");
   }catch(e){ setStatus("That file isn't an Adonis backup.") }
 }
@@ -346,10 +375,11 @@ function isTrainingDay(d){
   const p = progInfo(d); if(p.before) return false;
   const dd = dayDef(p.dn); return dd && !dd.rest;
 }
-function todayTargets(){
-  const r = nutriNow(cur);
+function todayTargets(){ return targetsOn(cur); }
+function targetsOn(d){
+  const r = nutriNow(d);
   if(!r) return {cal:S.settings.cal, protein:S.settings.protein, carbs:S.settings.carbs, fat:S.settings.fat};
-  const carbs = r.cycle && S.plan ? (isTrainingDay(cur) ? r.carbsTrain : r.carbsRest) : r.carbs;
+  const carbs = r.cycle && S.plan ? (isTrainingDay(d) ? r.carbsTrain : r.carbsRest) : r.carbs;
   return {cal: carbs===r.carbs ? r.cal : Math.round(r.protein*4 + carbs*4 + r.fat*9), protein:r.protein, carbs, fat:r.fat, r};
 }
 
@@ -542,6 +572,7 @@ function renderEat(){
       ${plate(t.f, T.fat, "var(--fat)", "Fat", "g")}
       ${plate(t.cal, T.cal, "var(--cal)", "Calories", "")}
     </div>
+    ${mealSection(D, T)}
     <h2>Logged</h2>
     <div class="card">${list}</div>
     <h2>Add food</h2>
@@ -632,7 +663,7 @@ function renderBody(){
       <div class="field" style="grid-column:span 2"><label for="g-date">By</label><input id="g-date" type="date" value="${esc(s.goalDate)}"></div>
     </div></div>
     <h2>Backup</h2>
-    <p class="sub">Your logs live only on this phone. Save a backup now and then (to Files or iCloud Drive), and use it to move to a new phone.</p>
+    <p class="sub">Your logs live only on this phone. Save a backup every two weeks (to Files or iCloud Drive), and use it to move to a new phone. ${S.settings.lastBackup?`Last backup: ${esc(parse(S.settings.lastBackup).toLocaleDateString(undefined,{month:"short",day:"numeric"}))}.`:"No backup yet."}</p>
     <div class="card">
       <button class="primary" id="export" style="margin-top:0">Save backup</button>
       <button class="primary" id="import" style="background:var(--field);color:var(--ink);border:1px solid var(--line)">Restore from backup</button>
@@ -644,7 +675,7 @@ function renderBody(){
 function render(){
   renderHeader();
   document.querySelectorAll("[data-tab]").forEach(b=>b.setAttribute("aria-selected", b.dataset.tab===tab));
-  $("#main").innerHTML = tab==="train" ? renderTrain() : tab==="eat" ? renderEat() : renderBody();
+  $("#main").innerHTML = backupBanner() + (tab==="train" ? renderTrain() : tab==="eat" ? renderEat() : renderBody());
 }
 function updateFoodCal(){
   const c = Math.round(num($("#fp")?.value)*4 + num($("#fc")?.value)*4 + num($("#ff")?.value)*9);
@@ -946,6 +977,7 @@ document.addEventListener("click", e=>{
   if(t.dataset.seen){ S.nutri.seen = S.nutri.seen||{}; S.nutri.seen[t.dataset.seen] = true; cacheLocal(); render(); return; }
   const act = t.dataset.act; if(!act) return;
   if(act==="nutri-edit"){ openNutrition(); return; }
+  if(act==="backup-later"){ S.settings.backupSnooze = todayStr(); cacheLocal(); render(); return; }
   if(act==="nutri-why"){ const w = $("#why"); w.hidden = !w.hidden; t.textContent = w.hidden ? "How this is calculated" : "Hide details"; return; }
   if(act==="start-cut"){ tab = "eat"; render(); openCut(); return; }
   if(act==="cut-end" || act==="cut-finish"){ rampToMaintenance(); return; }
@@ -960,6 +992,120 @@ document.addEventListener("click", e=>{
   }
   if(act==="adj-yes"){ S.nutri.adj = (S.nutri.adj||0) + (+t.dataset.adj); S.nutri.snooze = todayStr(); cacheLocal(); setStatus("Targets updated"); render(); return; }
   if(act==="adj-no"){ S.nutri.snooze = todayStr(); cacheLocal(); render(); return; }
+});
+
+/* ---------- meal plans ---------- */
+const MQ = [
+  {k:"meals", t:"How many times a day do you want to eat?", opts:[["3","3 meals"],["4","3 meals and a snack"],["5","3 meals and 2 snacks"]]},
+  {k:"style", t:"How do you eat?", opts:[["none","No restrictions"],["vegetarian","Vegetarian"],["pescatarian","Pescatarian","Vegetarian plus fish and seafood"],["vegan","Vegan"]]},
+  {k:"allergies", multi:true, none:"none", t:"Any allergies or foods to avoid?", sub:"Check all that apply.", opts:[["dairy","Dairy"],["eggs","Eggs"],["gluten","Gluten"],["nuts","Tree nuts"],["peanuts","Peanuts"],["shellfish","Shellfish"],["fish","Fish"],["soy","Soy"],["none","None"]]},
+  {k:"dislikes", multi:true, none:"none", t:"Anything you just don't like?", sub:"We'll leave these out.", opts:[["mushrooms","Mushrooms"],["beans","Beans and lentils"],["fish","Fish"],["shrimp","Shrimp"],["tofu","Tofu and tempeh"],["cottage","Cottage cheese"],["greek","Greek yogurt"],["avocado","Avocado"],["oats","Oatmeal"],["eggs","Eggs"],["none","None, I'll eat anything"]]},
+  {k:"cooking", t:"How do you like to cook?", opts:[["daily","Cook most days","A different meal most days"],["batch","Batch prep twice a week","Cook lunches and dinners on two prep days, eat them through the week"],["minimal","Minimal cooking","Quick meals, 10 minutes or less"]]},
+  {k:"people", t:"Who are you cooking for?", sub:"Your portions match your targets. Everyone else gets regular portions on the grocery list.", opts:[["1","Just me"],["2","Me and 1 more"],["3","3 people"],["4","4 people"],["5","5 people"],["6","6 people"],["7","7 or more"]]},
+];
+function mealPrefs(){
+  const a = S.mealplan.a, st = S.profile.status;
+  return {meals:+a.meals, style:a.style, allergies:(a.allergies||[]).filter(x=>x!=="none"), dislikes:(a.dislikes||[]).filter(x=>x!=="none"),
+    cooking:a.cooking, people:+a.people||1, pregnant: st==="pregnant", breastfeeding: st==="breastfeeding", targets: targetsOn(S.mealplan.week ? S.mealplan.week.start : todayStr())};
+}
+function ensureWeek(){
+  const mp = S.mealplan; if(!mp) return;
+  if(!mp.week || diff(todayStr(), mp.week.start) >= 7 || diff(todayStr(), mp.week.start) < 0){
+    mp.week = MP.planWeek({...mealPrefs(), targets: targetsOn(todayStr())}, todayStr()); mp.got = {}; cacheLocal();
+  }
+}
+function weekDayIndex(d){ const mp = S.mealplan; if(!mp || !mp.week) return -1; const i = diff(d, mp.week.start); return i>=0 && i<7 ? i : -1; }
+function mealSection(D, T){
+  if(!S.nutri) return "";
+  if(!S.mealplan) return `<div class="nsum" style="margin-top:6px"><div class="k">Meal plan</div><p style="margin:6px 0 0">Get a week of real meals sized to your targets, with a grocery list.</p><div class="acts"><button class="linkbtn go" data-act="meals-setup">Build my meal plan</button></div></div>`;
+  ensureWeek();
+  const di = weekDayIndex(cur);
+  if(di < 0) return `<h2>Meals</h2><p class="sub">This day isn't in your current meal plan week.</p>`;
+  const pr = mealPrefs(), dp = MP.dayPortions(S.mealplan.week.days[di], T, pr);
+  const logged = new Set(D.food.map(f=>f.meal).filter(Boolean));
+  const cards = dp.meals.map((m,i)=>{
+    const key = S.mealplan.week.start+"-"+di+"-"+i, isLogged = logged.has(key);
+    const cal = Math.round(m.cal);
+    return `<div class="meal"><div class="lab">${esc(m.label)}</div><div class="nm">${esc(m.name)}</div>
+      <div class="mac">${cal} cal · P ${Math.round(m.p)} · C ${Math.round(m.c)} · F ${Math.round(m.f)}</div>
+      <ul>${m.items.map(it=>`<li>${esc(MP.amountLine(it.ing,it.g))}</li>`).join("")}</ul>
+      ${m.how?`<details><summary>How to make it</summary><p style="margin:6px 0 0">${esc(m.how)}</p></details>`:""}
+      <div class="acts"><button class="linkbtn${isLogged?" done":" go"}" data-act="meal-log" data-i="${i}">${isLogged?"Logged ✓":"Log it"}</button>${MP.swapOptions(S.mealplan.week.days[di], i, pr).length && !(S.mealplan.week.prep && m.slot==="m")?`<button class="linkbtn" data-act="meal-swap" data-i="${i}">Swap</button>`:""}</div></div>`;
+  }).join("");
+  const tot = dp.total, off = Math.abs(tot.cal - T.cal)/T.cal > 0.1 || Math.abs(tot.p - T.protein)/T.protein > 0.12;
+  const pregTip = pr.pregnant ? `<p class="tip">Pregnancy-safe: no cold deli meat, eggs and meat cooked all the way through, and canned tuna at most twice a week.</p>` : "";
+  return `<h2>Today's meals</h2>
+    <p class="sub">Plan total: ${Math.round(tot.cal).toLocaleString()} cal · P ${Math.round(tot.p)} · C ${Math.round(tot.c)} · F ${Math.round(tot.f)}${off?". This is as close as your food choices allow today. Fill the gap with your own foods.":""}</p>
+    <div class="mtools"><button class="linkbtn" data-act="meals-grocery">Grocery list</button>${S.mealplan.week.prep?`<button class="linkbtn" data-act="meals-prep">Prep list</button>`:""}<button class="linkbtn" data-act="meals-setup">Meal preferences</button><button class="linkbtn" data-act="meals-new">New week</button></div>
+    ${pregTip}${cards}`;
+}
+function openSheet(title, inner){
+  const el = $("#builder");
+  el.innerHTML = `<div class="in"><div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><h2 style="margin:0;flex:1">${esc(title)}</h2></div>${inner}</div>`;
+  F = {qs:[], a:{}}; el.hidden = false; document.body.classList.add("on-home"); el.scrollTop = 0;
+}
+function targetsForDay(i){ return targetsOn(addDays(S.mealplan.week.start, i)); }
+function groceryHTML(){
+  const mp = S.mealplan, groups = MP.groceries(mp.week, targetsForDay, mealPrefs()), got = mp.got || {};
+  const end = parse(addDays(mp.week.start,6)).toLocaleDateString(undefined,{month:"short",day:"numeric"});
+  return `<p class="sub">For ${esc(parse(mp.week.start).toLocaleDateString(undefined,{month:"short",day:"numeric"}))} to ${esc(end)}${(+mp.a.people||1)>1?`, cooking for ${esc(mp.a.people==="7"?"7 or more":mp.a.people)}`:""}. Tap items as you shop.</p>
+    ${groups.map(g=>`<h2 style="font-size:20px">${esc(g.label)}</h2><div class="card glist">${g.items.map(it=>`<label class="${got[it.ing]?"got":""}"><input type="checkbox" data-got="${esc(it.ing)}" ${got[it.ing]?"checked":""}><span>${esc(it.name)}</span><span class="amt">${esc(it.amt)}</span></label>`).join("")}</div>`).join("")}`;
+}
+function prepHTML(){
+  const list = MP.prepList(S.mealplan.week, targetsForDay, mealPrefs());
+  return list.map(p=>{
+    const d = parse(addDays(S.mealplan.week.start, p.day)).toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"});
+    const last = parse(addDays(S.mealplan.week.start, p.covers[p.covers.length-1])).toLocaleDateString(undefined,{weekday:"long"});
+    return `<h2 style="font-size:22px">${esc(d)}</h2><p class="sub">Cook ${esc(p.meals.join(" and "))}. Covers lunches and dinners through ${esc(last)}.</p>
+      <div class="card glist">${p.items.map(it=>`<label><span>${esc(it.name)}</span><span class="amt">${esc(it.amt)}</span></label>`).join("")}</div>`;
+  }).join("") + `<p class="tip">Cooked food keeps 3 to 4 days in the fridge. Freeze anything you won't eat by then.</p>`;
+}
+function openMealSetup(){
+  const prev = S.mealplan ? JSON.parse(JSON.stringify(S.mealplan.a)) : {};
+  openFlow({qs:MQ, a:prev, lastLabel:"See my meals", summary:mealSummary, start:startMeals});
+}
+function mealSummary(el){
+  const a = F.a, tmp = {a};
+  const save = S.mealplan; S.mealplan = tmp;
+  const pr = {...mealPrefs(), targets: targetsOn(todayStr())};
+  const wk = MP.planWeek(pr, todayStr()), dp = MP.dayPortions(wk.days[0], targetsOn(todayStr()), pr);
+  S.mealplan = save;
+  const T = targetsOn(todayStr());
+  sumShell(el, "Your first day", `Each day lands near ${T.cal.toLocaleString()} calories and ${T.protein} g protein. Portions resize on their own when your targets change.`,
+    dp.meals.map(m=>`<div class="pday"><b>${esc(m.label)}: ${esc(m.name)}</b><div class="rest">${Math.round(m.cal)} cal · P ${Math.round(m.p)} · C ${Math.round(m.c)} · F ${Math.round(m.f)}</div></div>`).join("") +
+    `<p class="sub">Plan total: ${Math.round(dp.total.cal).toLocaleString()} cal · P ${Math.round(dp.total.p)} · C ${Math.round(dp.total.c)} · F ${Math.round(dp.total.f)}</p>`, "Start my meal plan");
+}
+function startMeals(){
+  S.mealplan = {a:{...F.a}, week:null, got:{}};
+  S.mealplan.week = MP.planWeek({...mealPrefs(), targets: targetsOn(todayStr())}, todayStr());
+  cacheLocal(); tab = "eat"; closeBuilder(); setStatus("Your meal plan is ready"); window.scrollTo(0,0);
+}
+document.addEventListener("click", e=>{
+  const t = e.target.closest("button"); if(!t) return;
+  const act = t.dataset.act; if(!act || !act.startsWith("meal")) return;
+  if(act==="meals-setup"){ openMealSetup(); return; }
+  if(act==="meals-new"){ S.mealplan.week = MP.planWeek({...mealPrefs(), targets: targetsOn(todayStr())}, todayStr()); S.mealplan.got = {}; cacheLocal(); cur = todayStr(); render(); setStatus("Fresh week of meals"); return; }
+  if(act==="meals-grocery"){ openSheet("Grocery list", groceryHTML()); return; }
+  if(act==="meals-prep"){ openSheet("Prep days", prepHTML()); return; }
+  const di = weekDayIndex(cur), i = +t.dataset.i; if(di<0) return;
+  const day = S.mealplan.week.days[di];
+  if(act==="meal-swap"){
+    const opts = MP.swapOptions(day, i, mealPrefs()); if(!opts.length) return;
+    day[i].id = opts[Math.floor(Math.random()*opts.length)]; cacheLocal(); render(); return;
+  }
+  if(act==="meal-log"){
+    const D = day_(cur), key = S.mealplan.week.start+"-"+di+"-"+i;
+    const idx = D.food.findIndex(f=>f.meal===key);
+    if(idx>=0) D.food.splice(idx,1);
+    else { const m = MP.dayPortions(day, targetsOn(cur), mealPrefs()).meals[i]; D.food.push({name:m.name, p:Math.round(m.p), c:Math.round(m.c), f:Math.round(m.f), meal:key}); }
+    saveDay(cur); render(); return;
+  }
+});
+function day_(d){ return day(d); }
+$("#builder").addEventListener("change", e=>{
+  const k = e.target.dataset.got; if(!k) return;
+  S.mealplan.got = S.mealplan.got || {}; S.mealplan.got[k] = e.target.checked;
+  e.target.closest("label").classList.toggle("got", e.target.checked); cacheLocal();
 });
 
 loadLocal();
