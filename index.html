@@ -255,6 +255,17 @@ body.resting .wrap{padding-bottom:200px}
 .moves{margin:0 0 10px 36px;padding-left:18px;font-size:15px}
 .moves li{margin:4px 0}
 
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.wordmark{font:700 15px var(--display);letter-spacing:.22em;color:var(--muted)}
+.iconbtn.person{width:38px;height:38px}
+.menu-list{display:grid;gap:10px;margin-top:12px}
+.menu-item{display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;font:600 17px var(--body)}
+.menu-item small{display:block;font-weight:400;font-size:13px;color:var(--muted);margin-top:2px}
+.menu-item.danger{color:var(--protein)}
+.checkrow{display:flex;gap:10px;align-items:flex-start;padding:12px 0;font-size:15px}
+.checkrow input{width:22px;height:22px;flex:none;margin-top:1px}
+.dangerbtn{background:var(--protein)!important;color:#fff!important}
+
 /* ---------- home ---------- */
 #home{position:fixed;inset:0;z-index:50;background:#18202C;color:#ECEEEA;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:env(safe-area-inset-top,0px) 24px env(safe-area-inset-bottom,0px);text-align:center}
 #home .logo{width:min(56vw,240px);height:auto;display:block}
@@ -287,6 +298,7 @@ body.on-home{overflow:hidden}
 </section>
 <div class="wrap">
   <header>
+    <div class="topbar"><span class="wordmark">ADONIS</span><button class="iconbtn person" id="menu" aria-label="Your account and settings" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 20.5c1.6-3.6 4.6-5.5 8-5.5s6.4 1.9 8 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     <div class="datebar">
       <button class="iconbtn" id="prev" aria-label="Previous day">‹</button>
       <h1 id="dtitle">Today<small id="dsub"></small></h1>
@@ -934,17 +946,26 @@ const NQ = [
   {k:"life", t:"Outside your workouts, how active are you?", sub:"Your training days come from your plan automatically.", opts:[["sit","Mostly sitting","Desk job, driving"],["some","On my feet some","Errands, chasing kids"],["most","On my feet most of the day","Retail, teaching, nursing"],["physical","Physical job","Construction, warehouse, landscaping"]]},
   {k:"workDays", only:()=>!S.plan, t:"How many days a week do you work out?", opts:[["0","None right now"],["2","1 to 2"],["3","3"],["4","4"],["5","5"],["6","6 or more"]]},
   {k:"goal", only:a=>!(a.sex==="female" && a.status==="pregnant"), t:"What's your goal?", opts:a=>[["cut","Lose fat (cut)"],["maintain","Maintain or recomp","Hold your weight while you build muscle and lose fat slowly"],...(a.status==="breastfeeding"&&a.sex==="female"?[]:[["bulk","Build muscle (lean bulk)"]])]},
-  {k:"pace", only:a=>!(a.sex==="female" && a.status==="pregnant") && (a.goal==="cut"||a.goal==="bulk"), t:"How fast?",
-    sub:"Faster isn't always better. Steady keeps more muscle and energy.",
-    opts:a=> a.goal==="cut" ? (a.sex==="female" && a.status==="breastfeeding" ? [["steady","Steady","About 0.5% of body weight a week. The safe pace while breastfeeding."]] :
-      [["steady","Steady","About 0.5% of body weight a week"],["moderate","Moderate","About 0.75% a week"],["aggressive","Aggressive","About 1% a week. Hard to sustain."]])
-      : [["slow","Slow","About 0.25% a week. Least fat gain."],["standard","Standard","About 0.5% a week"]]},
+  {k:"pace", only:a=>!(a.sex==="female" && a.status==="pregnant") && (a.goal==="cut"||a.goal==="bulk"),
+    t:a=> a.goal==="cut" ? "How fast do you want to lose weight?" : "How fast do you want to gain weight?",
+    sub:"",
+    subf:a=> a.goal==="cut" ? "Faster isn't always better. A steady pace keeps more muscle and energy." : "Muscle can only grow so fast. Gaining faster than that mostly adds fat, so slower is leaner.",
+    opts:a=> a.goal==="cut" ? cutPaceOpts(+a.weight, a.sex==="female" && a.status==="breastfeeding") : bulkPaceOpts(+a.weight)},
   {k:"carbs", only:()=>!!S.plan, t:"Carbs every day, or more on training days?", opts:[["same","Same every day"],["cycle","More on training days","Less on rest days, same weekly total"]]},
 ];
+function lbWk(w, pct){ const v = w ? Math.round(w*pct*4)/4 : 0; return v ? `About ${v} lb a week` : `About ${pct*100}% of your body weight a week`; }
+function cutPaceOpts(w, bf){
+  const steady = ["steady","Steady",`${lbWk(w,.005)}. Easiest to stick with.${bf?" The safe pace while breastfeeding.":""}`];
+  return bf ? [steady] : [steady, ["moderate","Moderate",`${lbWk(w,.0075)}.`], ["aggressive","Aggressive",`${lbWk(w,.01)}. Harder to sustain, and you may lose some muscle.`]];
+}
+function bulkPaceOpts(w){
+  return [["slow","Lean gain",`${lbWk(w,.0025)}. Mostly muscle, the least extra fat. Best for most people.`],
+    ["standard","Faster gain",`${lbWk(w,.005)}. A bit more muscle, but more fat comes with it. Best for newer or very lean lifters.`]];
+}
 const CQ = [
   {k:"weeks", t:"How long do you want to cut?", opts:[["6","6 weeks"],["8","8 weeks"],["12","12 weeks"]]},
-  {k:"pace", t:"How fast?", sub:"Steady keeps more muscle and energy.", opts:a=> S.profile.status==="breastfeeding" ? [["steady","Steady","About 0.5% of body weight a week. The safe pace while breastfeeding."]] :
-    [["steady","Steady","About 0.5% of body weight a week"],["moderate","Moderate","About 0.75% a week"],["aggressive","Aggressive","About 1% a week. Hard to sustain."]]},
+  {k:"pace", t:"How fast do you want to lose weight?", subf:()=>"Faster isn't always better. A steady pace keeps more muscle and energy.",
+    opts:()=> cutPaceOpts(latestBody().weight || (S.nutri && +S.nutri.a.weight) || 0, S.profile.status==="breastfeeding")},
 ];
 
 let F = null, bi = 0, bview = "q";
@@ -976,7 +997,7 @@ function renderBuilder(){
   }
   el.innerHTML = `<div class="in">
     <div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div><span class="sub" style="margin:0">${bi+1} of ${qs.length}</span></div>
-    <h2>${esc(typeof q.t==="function" ? q.t(F.a) : q.t)}</h2>${q.sub?`<p class="sub">${esc(q.sub)}</p>`:""}
+    <h2>${esc(typeof q.t==="function" ? q.t(F.a) : q.t)}</h2>${(q.subf ? q.subf(F.a) : q.sub)?`<p class="sub">${esc(q.subf ? q.subf(F.a) : q.sub)}</p>`:""}
     ${body}
     <div class="err" id="berr" role="alert"></div></div>
     <div class="bnav"><div class="in2"><button data-b="back"${bi===0?" disabled":""}>Back</button><button class="next" data-b="next">${bi===qs.length-1?F.lastLabel:"Next"}</button></div></div>`;
@@ -1436,6 +1457,58 @@ $("#rest").addEventListener("click", e=>{
 });
 let toastT = null;
 function showToast(msg){ const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(()=>t.hidden = true, 3200); }
+
+/* ---------- account menu: reset plans, send feedback ---------- */
+const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
+const APP_VERSION = "2026.10.11";
+function openMenu(){
+  openSheet("Your Adonis", `<div class="menu-list">
+    <button class="menu-item" data-menu="feedback"><span>Send feedback<small>Tell us what's working and what isn't</small></span></button>
+    <button class="menu-item" data-menu="backup"><span>Save a backup<small>${S.settings.lastBackup?`Last backup: ${esc(parse(S.settings.lastBackup).toLocaleDateString(undefined,{month:"short",day:"numeric"}))}`:"No backup yet"}</small></span></button>
+    <button class="menu-item danger" data-menu="reset"><span>Reset all plans<small>Start fresh with new workout, nutrition and meal plans</small></span></button>
+  </div><p class="tip" style="margin-top:16px">Adonis version ${APP_VERSION}</p>`);
+}
+function resetHTML(){
+  const has = [S.plan?"your workout plan":"", S.nutri?"your nutrition targets":"", S.mealplan?"your meal plan":""].filter(Boolean);
+  return `<p class="sub">This clears ${has.length ? esc(has.join(", ").replace(/, ([^,]*)$/," and $1")) : "your plans"} so you can build new ones from scratch.</p>
+    <div class="card"><p style="margin:0 0 6px"><b>You keep:</b> your logged workouts, food, weigh-ins, records and saved foods.</p>
+    <label class="checkrow"><input type="checkbox" id="wipeall"><span>Also erase my logged history. This can't be undone.</span></label></div>
+    <button class="primary" data-menu="backup" style="background:var(--field);color:var(--ink);border:1px solid var(--line)">Save a backup first</button>
+    <button class="primary dangerbtn" data-menu="reset-go">Reset my plans</button>`;
+}
+function feedbackHTML(){
+  return `<p class="sub">What's working? What's confusing? What would you add? Every note gets read.</p>
+    <div class="card"><div class="field"><label for="fbtext">Your feedback</label><textarea id="fbtext" rows="6" style="width:100%;border:1px solid var(--line);border-radius:8px;background:var(--field);padding:10px;font:inherit" placeholder="Example: The meal swap button is hard to find."></textarea></div>
+    <div class="err" id="fberr" role="alert"></div>
+    <button class="primary" data-menu="send">${FEEDBACK_EMAIL?"Send":"Copy my feedback"}</button>
+    <p class="tip">${FEEDBACK_EMAIL?"Opens your email app with your note and your phone and app details filled in.":"Feedback email isn't set up yet, so this copies your note to paste into a text or email."}</p></div>`;
+}
+function feedbackBody(text){
+  const plan = S.plan ? `${S.plan.title}${S.plan.answers && S.plan.answers.track ? ` (${S.plan.answers.track})` : ""}` : "none";
+  return `${text}\n\n---\nAdonis ${APP_VERSION}\nPlan: ${plan}\nNutrition set up: ${S.nutri?"yes":"no"}, meal plan: ${S.mealplan?"yes":"no"}\nInstalled: ${window.matchMedia("(display-mode: standalone)").matches || navigator.standalone ? "home screen" : "browser"}\nDevice: ${navigator.userAgent}`;
+}
+$("#menu").addEventListener("click", openMenu);
+document.addEventListener("click", async e=>{
+  const t = e.target.closest("[data-menu]"); if(!t) return;
+  const m = t.dataset.menu;
+  if(m==="feedback"){ openSheet("Send feedback", feedbackHTML()); setTimeout(()=>{ const x=$("#fbtext"); x && x.focus(); }, 50); return; }
+  if(m==="backup"){ exportData(); return; }
+  if(m==="reset"){ openSheet("Reset all plans", resetHTML()); return; }
+  if(m==="reset-go"){
+    const wipe = $("#wipeall") && $("#wipeall").checked;
+    S.plan = null; S.nutri = null; S.mealplan = null; S.profile = {}; S.blockSeen = {}; S.recapSeen = {};
+    if(wipe){ S.days = {}; S.foods = {}; }
+    S.settings.start = todayStr(); cur = todayStr(); tab = "train"; MEALPOS = {key:"", i:0};
+    cacheLocal(); closeBuilder(); window.scrollTo(0,0); showToast(wipe ? "Everything's reset. Fresh start." : "Plans reset. Your history is safe."); return;
+  }
+  if(m==="send"){
+    const text = ($("#fbtext").value || "").trim();
+    if(!text){ $("#fberr").textContent = "Write a quick note first."; return; }
+    const body = feedbackBody(text);
+    if(FEEDBACK_EMAIL){ location.href = `mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent("Adonis feedback")}&body=${encodeURIComponent(body)}`; return; }
+    try{ await navigator.clipboard.writeText(body); showToast("Copied. Paste it into a text or email."); }catch(err){ $("#fberr").textContent = "Couldn't copy. Select the text and copy it yourself."; }
+  }
+});
 
 /* ---------- food search ---------- */
 const FD = window.AdonisFoods;
