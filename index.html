@@ -146,6 +146,21 @@ details.notes ul{margin:6px 0 0;padding-left:18px}
 .pday .rest{color:var(--muted);font-size:14px}
 .err{color:var(--protein);font-size:14px;min-height:20px;margin-top:8px}
 
+.msg{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--cal);border-radius:0;padding:12px 14px;margin:12px 0}
+.msg.adj{border-left-color:var(--carbs)}
+.msg p{margin:0 0 10px}
+.msg .acts{display:flex;gap:8px;flex-wrap:wrap}
+.nsum{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;margin:14px 0 4px}
+.nsum .k{font-size:13px;color:var(--muted)}
+.nsum .big{font:700 34px/1 var(--display)}
+.nsum .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.flds{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.flds .field input{font-size:18px;padding:12px}
+.flds .wide{grid-column:1/-1}
+.tip{font-size:13px;color:var(--muted);margin-top:4px}
+.kv{display:grid;grid-template-columns:minmax(110px,auto) 1fr;gap:6px 12px;font-size:15px;margin:0}
+.kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+
 /* ---------- home ---------- */
 #home{position:fixed;inset:0;z-index:50;background:#18202C;color:#ECEEEA;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:env(safe-area-inset-top,0px) 24px env(safe-area-inset-bottom,0px);text-align:center}
 #home .logo{width:min(56vw,240px);height:auto;display:block}
@@ -196,12 +211,14 @@ body.on-home{overflow:hidden}
 </div></nav>
 
 <script src="engine.js"></script>
+<script src="nutrition.js"></script>
 <script>
 const DEFAULTS = {start:todayStr(), cal:2400, protein:175, carbs:265, fat:70, goalWeight:175, goalBf:15, goalDate:""};
 const RECOVERY = ["Walking","Yoga","Stretching","Mobility","Hiking","Foam rolling","Biking"];
 
 /* ---------- state ---------- */
-let S = {settings:{...DEFAULTS}, days:{}, plan:null};
+let S = {settings:{...DEFAULTS}, days:{}, plan:null, profile:{}, nutri:null, blockSeen:{}};
+const N = window.AdonisNutrition;
 const E = window.AdonisEngine;
 let cur = todayStr();
 let tab = "train";
@@ -234,7 +251,7 @@ function isBW(name, e){ const x = E && E.BY_NAME[name]; return x ? (x.eq.length=
 
 /* ---------- storage ---------- */
 function cacheLocal(){try{localStorage.setItem("adonis-v1", JSON.stringify(S))}catch(e){}}
-function loadLocal(){try{const r=localStorage.getItem("adonis-v1");if(r){const o=JSON.parse(r);S={settings:{...DEFAULTS,...o.settings},days:o.days||{},plan:o.plan||null}}}catch(e){}}
+function loadLocal(){try{const r=localStorage.getItem("adonis-v1");if(r){const o=JSON.parse(r);S={settings:{...DEFAULTS,...o.settings},days:o.days||{},plan:o.plan||null,profile:o.profile||{},nutri:o.nutri||null,blockSeen:o.blockSeen||{}}}}catch(e){}}
 function setStatus(t){$("#status").textContent=t}
 const timers = {};
 function saveDay(d){
@@ -272,6 +289,8 @@ async function importData(file){
     S.settings = {...DEFAULTS, ...S.settings, ...(o.settings||{})};
     for(const d in o.days) S.days[d] = o.days[d];
     if(o.plan) S.plan = o.plan;
+    if(o.profile) S.profile = {...S.profile, ...o.profile};
+    if(o.nutri) S.nutri = o.nutri;
     cacheLocal(); render(); setStatus("Backup restored");
   }catch(e){ setStatus("That file isn't an Adonis backup.") }
 }
@@ -301,9 +320,51 @@ function lastFor(name){
   }
   return null;
 }
+/* ---------- shared profile + nutrition helpers ---------- */
+function trainingDaysPerWeek(){
+  if(S.plan && S.plan.days) return S.plan.mode==="recovery" ? 0 : S.plan.days.filter(d=>!d.rest).length;
+  return S.nutri && S.nutri.a && S.nutri.a.workDays ? +S.nutri.a.workDays : 3;
+}
+function latestBody(){
+  const ks = Object.keys(S.days).sort();
+  const ws = weights(), a = avg7(ws, todayStr());
+  const recent = ws.filter(x=>diff(todayStr(),x.d)<7).length;
+  const pick = f => { for(let i=ks.length-1;i>=0;i--){ const v = num(S.days[ks[i]][f]); if(v>0) return v; } return null; };
+  return {weight: recent>=3 ? a : (ws.length ? ws[ws.length-1].w : null), bf: pick("bf"), waist: pick("waist")};
+}
+function nutriInputs(){
+  const a = {...S.nutri.a, ...S.profile};
+  return a;
+}
+function nutriNow(onDate){
+  if(!S.nutri || !N) return null;
+  const b = latestBody(), n = S.nutri;
+  return N.compute(nutriInputs(), {today:onDate||todayStr(), trainingDays:trainingDaysPerWeek(), weight:b.weight, bf:b.bf, waist:b.waist, adj:n.adj||0, cut:n.cut, ramp:n.ramp});
+}
+function isTrainingDay(d){
+  if(!S.plan) return true;
+  const p = progInfo(d); if(p.before) return false;
+  const dd = dayDef(p.dn); return dd && !dd.rest;
+}
+function todayTargets(){
+  const r = nutriNow(cur);
+  if(!r) return {cal:S.settings.cal, protein:S.settings.protein, carbs:S.settings.carbs, fat:S.settings.fat};
+  const carbs = r.cycle && S.plan ? (isTrainingDay(cur) ? r.carbsTrain : r.carbsRest) : r.carbs;
+  return {cal: carbs===r.carbs ? r.cal : Math.round(r.protein*4 + carbs*4 + r.fat*9), protein:r.protein, carbs, fat:r.fat, r};
+}
+
 function planCard(){
   if(!S.plan) return "";
   return `<div class="plancard"><div class="t"><b>${esc(S.plan.title)}</b>Your custom plan</div><button class="linkbtn" id="build">Rebuild</button></div>`;
+}
+function trainCrossCards(p){
+  let h = "";
+  const pregInPlan = S.plan && S.plan.answers && (S.plan.answers.around||[]).includes("pregnant");
+  if(S.profile.status==="pregnant" && !pregInPlan && !(S.plan && S.plan.mode==="recovery"))
+    h += `<div class="msg"><p>Your nutrition shows you're expecting. Rebuild your plan to get pregnancy-safe workouts.</p><div class="acts"><button class="linkbtn go" data-act="rebuild-preg">Rebuild my plan</button></div></div>`;
+  if(p && !p.before && p.week===4 && p.dn>=5 && !S.blockSeen[p.cycle])
+    h += `<div class="msg"><p><b>Your 4-week block is almost done.</b> What's next?</p><div class="acts"><button class="linkbtn" id="build">Build the next 4 weeks</button>${S.profile.status!=="pregnant"?`<button class="linkbtn go" data-act="start-cut">Start a cut</button>`:""}<button class="linkbtn" data-act="block-dismiss" data-cycle="${p.cycle}">Later</button></div></div>`;
+  return h;
 }
 function planNotes(){
   if(!S.plan) return "";
@@ -320,7 +381,7 @@ function renderTrain(){
   if(p.before) return planCard()+`<h2>Not started yet</h2><p class="sub">Your program starts ${esc(parse(S.settings.start).toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"}))}. Change the start date on the Body tab.</p>`;
   const P = dayDef(p.dn);
   if(P.rest){
-    return planCard()+`<h2>${esc(P.name==="Rest"?"Rest day":"Active recovery")}</h2><p class="sub">Keep it easy. Tap what you did today.</p>
+    return planCard()+trainCrossCards(p)+`<h2>${esc(P.name==="Rest"?"Rest day":"Active recovery")}</h2><p class="sub">Keep it easy. Tap what you did today.</p>
       <div class="chips" id="recov">${RECOVERY.map(r=>`<button class="chip" data-rec="${esc(r)}" aria-pressed="${D.recovery.includes(r)}">${esc(r)}</button>`).join("")}</div>`;
   }
   let n = 0;
@@ -369,7 +430,7 @@ function renderTrain(){
       <div class="sets">${rows}</div>${sw}</section>`;
   }).join("");
   const restTxt = S.plan && S.plan.mode==="recovery" ? "Go slowly and rest whenever you need." : "Rest 60–90 seconds between sets.";
-  return `${planCard()}${planNotes()}<h2>${esc(P.name)}</h2><p class="sub">${esc(weekNote(p.week).replace(/([^.!?])$/,"$1."))} ${restTxt}</p>
+  return `${planCard()}${trainCrossCards(p)}${planNotes()}<h2>${esc(P.name)}</h2><p class="sub">${esc(weekNote(p.week).replace(/([^.!?])$/,"$1."))} ${restTxt}</p>
     <div id="lifts">${cards}</div>
     <button class="primary${D.complete?" ok":""}" id="complete">${D.complete?"Workout finished ✓":"Finish workout"}</button>`;
 }
@@ -404,19 +465,82 @@ function recentFoods(){
   }));
   return [...seen.values()].slice(0,12);
 }
+const PREG_MSG = {
+  first: {1:"Congrats on the pregnancy! Your calories stay about the same for now. I'll raise them automatically when you reach your second trimester.",
+          2:"Congrats on the pregnancy! I've auto-adjusted your daily calories to maintain a safe nutritional balance as your baby grows.",
+          3:"Congrats on the pregnancy! I've auto-adjusted your daily calories to maintain a safe nutritional balance as your baby grows."},
+  next: {2:"You're in your second trimester! I've raised your daily calories to support your baby's growth.",
+         3:"You're in your third trimester! I've added a little more to support your baby's growth."}
+};
+function eatMessages(r){
+  const n = S.nutri, seen = n.seen || (n.seen = {}), out = [];
+  const pf = S.profile;
+  // new baby: training plan says postpartum while we still think pregnant
+  if(pf.status==="ask"){
+    out.push(`<div class="msg"><p><b>Congrats on your new baby!</b> Are you breastfeeding? It changes how much you need to eat.</p><div class="acts"><button class="linkbtn go" data-act="bf-yes">Yes</button><button class="linkbtn" data-act="bf-no">No</button></div></div>`);
+    return out.join("");
+  }
+  if(r.status==="pregnant" && pf.dueDate){
+    const tri = r.trimester, base = "preg";
+    const anySeen = [1,2,3].some(t=>seen[base+"-"+t]);
+    const key = base+"-"+tri;
+    if(!seen[key]){
+      const text = anySeen ? (PREG_MSG.next[tri] || PREG_MSG.first[tri]) : PREG_MSG.first[tri];
+      out.push(`<div class="msg"><p>${esc(text)}</p><div class="acts"><button class="linkbtn" data-seen="${esc(key)}">Got it</button></div></div>`);
+    }
+    if(N.daysBetween(todayStr(), pf.dueDate) > 14 && !seen[base+"-past"])
+      out.push(`<div class="msg adj"><p>Your due date has passed. When you're ready, update your details so your targets stay accurate.</p><div class="acts"><button class="linkbtn" data-act="nutri-edit">Update my details</button><button class="linkbtn" data-seen="${esc(base+"-past")}">Later</button></div></div>`);
+  }
+  if(r.status==="breastfeeding" && !seen["bf-on"])
+    out.push(`<div class="msg"><p>${n.bfFromAsk?"":"Congrats on your new baby! "}Since you're breastfeeding, I've auto-adjusted your daily calories to support milk production and your recovery.</p><div class="acts"><button class="linkbtn" data-seen="bf-on">Got it</button></div></div>`);
+  if(n.bfOff && !seen["bf-off-"+n.bfOff])
+    out.push(`<div class="msg"><p>Got it. Your calories will ease back down over the next two weeks so it isn't a sudden drop.</p><div class="acts"><button class="linkbtn" data-seen="bf-off-${esc(n.bfOff)}">Got it</button></div></div>`);
+  if(r.cut && r.cut.done)
+    out.push(`<div class="msg"><p><b>You finished your ${r.cut.weeks}-week cut.</b> Nice work. Next, I'll bring your calories back up to maintenance over two weeks so the scale doesn't jump.</p><div class="acts"><button class="linkbtn go" data-act="cut-finish">Move to maintenance</button></div></div>`);
+  // weekly trend check (never during pregnancy)
+  if(r.status!=="pregnant" && !(r.cut && r.cut.done)){
+    const snoozed = n.snooze && N.daysBetween(todayStr(), n.snooze) < 7;
+    const startedAgo = n.started ? N.daysBetween(todayStr(), n.started) : 99;
+    if(!snoozed && startedAgo >= 14){
+      const sug = N.trendCheck(weights(), r.goal, r.pace, todayStr(), r.weight);
+      if(sug){
+        out.push(`<div class="msg adj"><p>${esc(sug.why)}: ${sug.change>0?"+":""}${sug.change} lb this week${r.goal!=="maintain"?` against a goal of ${sug.target>0?"+":""}${sug.target} lb`:""}. ${sug.adj<0?"Lower":"Raise"} your daily calories by ${Math.abs(sug.adj)}?</p><div class="acts"><button class="linkbtn go" data-act="adj-yes" data-adj="${sug.adj}">Yes, update</button><button class="linkbtn" data-act="adj-no">Not now</button></div></div>`);
+      }
+    }
+  }
+  return out.join("");
+}
+function goalLine(r){
+  if(r.status==="pregnant") return `Pregnancy, week ${Math.max(1,r.gestWeeks)}${r.trimester?` (trimester ${r.trimester})`:""}`;
+  if(r.cut && !r.cut.done) return `Cut: week ${r.cut.week} of ${r.cut.weeks}`;
+  if(r.ramp) return `Back to maintenance: day ${r.ramp.day} of ${r.ramp.days}`;
+  const g = {cut:"Cut", maintain:"Maintain / recomp", bulk:"Lean bulk"}[r.goal] || "Maintain";
+  return g + (r.status==="breastfeeding" ? " while breastfeeding" : "");
+}
 function renderEat(){
-  const D = day(cur), t = totals(D), s = S.settings;
+  const D = day(cur), t = totals(D), T = todayTargets(), r = T.r;
+  let top = "";
+  if(!S.nutri){
+    top = `<h2>Let's set up your nutrition</h2><p class="sub">A few quick questions and Adonis sets your daily calories, protein, carbs and fat. It updates itself as your weight and training change.</p>
+      <button class="primary" data-act="nutri-edit" style="background:var(--protein);color:#fff">Set up my nutrition</button>`;
+  } else {
+    const canCut = r.status!=="pregnant" && !(r.cut && !r.cut.done);
+    top = `${eatMessages(r)}<div class="nsum"><div class="k">${esc(goalLine(r))}${r.cycle&&S.plan?` · ${isTrainingDay(cur)?"Training day":"Rest day"} carbs`:""}</div>
+      <div class="big">${T.cal.toLocaleString()} <span class="k">calories today</span></div>
+      <div class="acts">${canCut?`<button class="linkbtn" data-act="start-cut">Start a cut</button>`:""}${r.cut && !r.cut.done?`<button class="linkbtn" data-act="cut-end">End cut early</button>`:""}${r.status==="breastfeeding"?`<button class="linkbtn" data-act="bf-stop">Stopped breastfeeding</button>`:""}<button class="linkbtn" data-act="nutri-edit">Edit my answers</button><button class="linkbtn" data-act="nutri-why">How this is calculated</button></div>
+      <div id="why" hidden>${whyBlock(r)}</div></div>`;
+  }
   const list = D.food.length ? D.food.map((f,i)=>`
     <div class="entry"><div class="nm"><b>${esc(f.name||"Food")}</b>
       <span class="mac">${Math.round(num(f.p)*4+num(f.c)*4+num(f.f)*9)} cal. P ${num(f.p)}, C ${num(f.c)}, F ${num(f.f)}</span></div>
       <button class="del" data-del="${i}" aria-label="Remove ${esc(f.name)}">×</button></div>`).join("")
     : `<p class="empty">Nothing logged yet. Add your first meal below.</p>`;
   const recent = recentFoods();
-  return `<div class="plates">
-      ${plate(t.p, s.protein, "var(--protein)", "Protein", "g")}
-      ${plate(t.c, s.carbs, "var(--carbs)", "Carbs", "g")}
-      ${plate(t.f, s.fat, "var(--fat)", "Fat", "g")}
-      ${plate(t.cal, s.cal, "var(--cal)", "Calories", "")}
+  return `${top}<div class="plates">
+      ${plate(t.p, T.protein, "var(--protein)", "Protein", "g")}
+      ${plate(t.c, T.carbs, "var(--carbs)", "Carbs", "g")}
+      ${plate(t.f, T.fat, "var(--fat)", "Fat", "g")}
+      ${plate(t.cal, T.cal, "var(--cal)", "Calories", "")}
     </div>
     <h2>Logged</h2>
     <div class="card">${list}</div>
@@ -433,6 +557,20 @@ function renderEat(){
     </div>
     ${recent.length?`<h2>Add again</h2><p class="sub">Tap to log a food you've had before.</p>
       <div class="chips">${recent.map((f,i)=>`<button class="chip" data-re="${i}">${esc(f.name)}</button>`).join("")}</div>`:""}`;
+}
+function whyBlock(r){
+  const rows = [
+    ["Weight used", r.weight+" lb"],
+    ["Body fat", r.bf!=null ? `${r.bf}% (from ${r.bfSource})` : "Not used"],
+    ["BMI", r.bmi],
+    ["Burn at rest", `${r.bmr.toLocaleString()} cal (${r.bmrHow})`],
+    ["With activity", `${r.tdee.toLocaleString()} cal (×${r.mult}: ${r.lifeLbl.toLowerCase()}, ${trainingDaysPerWeek()} training days)`],
+  ];
+  if(r.delta) rows.push([r.delta<0?"Cut":"Bulk", `${r.delta>0?"+":""}${r.delta} cal`]);
+  if(r.extra) rows.push([r.status==="pregnant"?"Pregnancy":"Breastfeeding", `+${r.extra} cal`]);
+  if(S.nutri.adj) rows.push(["Weekly check-ins", `${S.nutri.adj>0?"+":""}${S.nutri.adj} cal`]);
+  rows.push(["Protein", `${r.protein} g`], ["Fat", `${r.fat} g`], ["Carbs", r.cycle?`${r.carbsTrain} g training days, ${r.carbsRest} g rest days`:`${r.carbs} g`]);
+  return `<dl class="kv" style="margin-top:12px">${rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>${r.notes.length?`<ul class="sub" style="padding-left:18px;margin:10px 0 0">${r.notes.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}`;
 }
 
 /* ---------- body ---------- */
@@ -472,19 +610,21 @@ function renderBody(){
     <div class="card"><div class="row">
       <div class="field" style="grid-column:span 2"><label for="bw">Weight (lb)</label><input id="bw" inputmode="decimal" value="${esc(D.weight)}"></div>
       <div class="field" style="grid-column:span 2"><label for="bbf">Body fat % (optional)</label><input id="bbf" inputmode="decimal" value="${esc(D.bf)}"></div>
-    </div></div>
+      <div class="field" style="grid-column:span 2"><label for="bwaist">Waist, inches (optional)</label><input id="bwaist" inputmode="decimal" value="${esc(D.waist||"")}"></div>
+    </div><p class="tip">Measure your waist about once a week, at the same spot each time.</p></div>
     <div class="stats">
       <div class="stat"><b>${a!=null?a.toFixed(1):"—"}</b><span>7-day average</span></div>
       <div class="stat"><b>${change!=null?(change>0?"+":"")+change.toFixed(1):"—"}</b><span>Since first weigh-in</span></div>
       <div class="stat"><b>${lastBf!=null?lastBf+"%":"—"}</b><span>Latest body fat</span></div>
     </div>
     ${chart(ws)}
-    <p class="sub">Goal: ${esc(s.goalWeight)} lb at ${esc(s.goalBf)}% ${s.goalDate?"by "+esc(parse(s.goalDate).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})):""}. If your average drops faster than 1 lb a week, eat about 150 more calories. If weight and waist stay flat for 3 weeks, eat about 150 fewer.</p>
+    <p class="sub">Goal: ${esc(s.goalWeight)} lb at ${esc(s.goalBf)}% ${s.goalDate?"by "+esc(parse(s.goalDate).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})):""}. ${S.nutri?"Your weigh-ins, body fat and waist feed straight into your Eat tab targets, and Adonis checks your trend every week.":""}</p>
+    ${S.nutri?`<h2>Program</h2><div class="card"><div class="row"><div class="field" style="grid-column:span 2"><label for="t-start">Program start</label><input id="t-start" type="date" value="${esc(s.start)}"></div></div></div>`:`
     <h2>Targets</h2>
     <div class="card"><div class="row">
       ${[["cal","Calories"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"]].map(([k,l])=>`<div class="field"><label for="t-${k}">${l}</label><input id="t-${k}" data-set="${k}" inputmode="numeric" value="${esc(s[k])}"></div>`).join("")}
       <div class="field" style="grid-column:span 2"><label for="t-start">Program start</label><input id="t-start" type="date" value="${esc(s.start)}"></div>
-    </div></div>
+    </div><p class="tip">Set up nutrition on the Eat tab and these are calculated for you.</p></div>`}
     <h2>Goal</h2>
     <div class="card"><div class="row">
       <div class="field"><label for="g-w">Weight lb</label><input id="g-w" data-set="goalWeight" inputmode="decimal" value="${esc(s.goalWeight)}"></div>
@@ -548,14 +688,15 @@ document.addEventListener("input", e=>{
   if(["fp","fc","ff"].includes(el.id)){updateFoodCal();return}
   if(el.id==="bw"){D.weight=el.value.trim();saveDay(cur);return}
   if(el.id==="bbf"){D.bf=el.value.trim();saveDay(cur);return}
+  if(el.id==="bwaist"){D.waist=el.value.trim();saveDay(cur);return}
   if(el.dataset.set){S.settings[el.dataset.set]=num(el.value);saveSettings();return}
   if(el.id==="g-date"){S.settings.goalDate=el.value;saveSettings();return}
   if(el.id==="t-start" && el.value){S.settings.start=el.value;saveSettings();renderHeader();return}
 });
 document.addEventListener("change", e=>{ if(e.target.id==="importfile"){const f=e.target.files[0];e.target.value="";if(f)importData(f);return} if(e.target.id==="bw"||e.target.id==="bbf") render(); });
 
-/* ---------- plan builder ---------- */
-const Q = [
+/* ---------- question flows (training plan, nutrition, cut) ---------- */
+const TQ = [
   {k:"goal", t:"What's your main goal?", opts:[["muscle","Build muscle"],["fatloss","Lose fat and keep muscle"],["strength","Get stronger"],["general","General fitness"]]},
   {k:"experience", t:"How long have you been lifting consistently?", opts:[["1","Under 6 months"],["2","6 months to 2 years"],["3","2+ years"]]},
   {k:"days", t:"How many days a week can you train?", opts:[["2","2 days"],["3","3 days"],["4","4 days"],["5","5 days"],["6","6 days"]]},
@@ -565,52 +706,87 @@ const Q = [
     opts:[["bb","Barbell and rack"],["db_light","Dumbbells (light set)"],["db_full","Dumbbells (full set)"],["bench","Bench"],["cab","Cables or machines"],["pu","Pull-up bar"],["band","Resistance bands"],["mb","Medicine ball or slam ball"],["none","None (bodyweight only)"]]},
   {k:"around", multi:true, t:"Anything we should plan around?", sub:"Check all that apply.", none:"none", excl:[["pregnant","postpartum"]],
     opts:[["shoulders","Shoulders"],["lowback","Lower back"],["knees","Knees"],["wrists","Elbows or wrists"],["pelvic","Pelvic floor or bladder leaks","Adds a pelvic floor warm-up and skips jumping"],["pregnant","Pregnant"],["postpartum","Postpartum"],["none","None"]]},
-  {k:"trimester", only:a=>(a.around||[]).includes("pregnant"), t:"Which trimester are you in?", opts:[["1","First","Weeks 1 to 13"],["2","Second","Weeks 14 to 27"],["3","Third","Week 28 on"]]},
+  {k:"dueDate", type:"fields", only:a=>(a.around||[]).includes("pregnant"), t:"When is your due date?", sub:"Adonis uses it to keep your workouts and nutrition right for each stage, automatically.",
+    fields:[{k:"dueDate", label:"Due date", type:"date", wide:true}],
+    check:a=>{ if(!a.dueDate) return "Enter your due date."; const d=N.daysBetween(a.dueDate, todayStr()); if(d<-21||d>290) return "That date doesn't look right. Check the year."; return ""; }},
   {k:"prePreg", only:a=>(a.around||[]).includes("pregnant"), t:"Before pregnancy, how hard were you training?", sub:"Your plan matches the intensity you're used to. Every exercise has an Easier option.", opts:[["1","Not much"],["2","A few times a week, moderate"],["3","Hard, most days"]]},
   {k:"since", only:a=>(a.around||[]).includes("postpartum"), t:"How long since you gave birth?", opts:[["lt6","Under 6 weeks","A guided pelvic floor and walking program"],["6w","6 weeks to 3 months"],["3m","3 to 6 months"],["6m","6 to 12 months"]]},
   {k:"emphasis", only:a=>!((a.around||[]).includes("postpartum") && a.since==="lt6"), t:"Anything to emphasize?", dflt:"none",
     opts:[["none","No, keep it even"],["upper","Upper body"],["lower","Lower body"],["arms","Arms"],["glutes","Glutes"],["core","Core"]]},
 ];
-let BA = {}, bi = 0, bview = "q";
-function visibleQ(){ return Q.filter(q=>!q.only || q.only(BA)); }
-function openBuilder(){
-  BA = S.plan && S.plan.answers ? JSON.parse(JSON.stringify(S.plan.answers)) : {};
-  bi = 0; bview = "q"; $("#builder").hidden = false; document.body.classList.add("on-home"); renderBuilder();
-}
+const NQ = [
+  {k:"sex", t:"Are you male or female?", sub:"The calorie and body fat formulas are different for each.", opts:[["male","Male"],["female","Female"]]},
+  {k:"about", type:"fields", t:"About you", fields:[
+    {k:"age", label:"Age", type:"number"}, {k:"weight", label:"Weight (lb)", type:"number"},
+    {k:"hFt", label:"Height (feet)", type:"number"}, {k:"hIn", label:"Height (inches)", type:"number"}],
+    check:a=>{ if(!(+a.age>=14 && +a.age<=90)) return "Enter an age between 14 and 90.";
+      if(!(+a.weight>=70 && +a.weight<=600)) return "Enter your weight in pounds.";
+      const h=(+a.hFt||0)*12+(+a.hIn||0); if(!(h>=48 && h<=90)) return "Enter your height in feet and inches."; return ""; }},
+  {k:"status", only:a=>a.sex==="female", t:"Are you pregnant or breastfeeding?", sub:"Adonis adjusts your calories automatically for either one.", opts:[["none","Neither"],["pregnant","Pregnant"],["breastfeeding","Breastfeeding"]]},
+  {k:"dueDate", type:"fields", only:a=>a.sex==="female" && a.status==="pregnant", t:"When is your due date?", fields:[{k:"dueDate", label:"Due date", type:"date", wide:true}],
+    check:a=>{ if(!a.dueDate) return "Enter your due date."; const d=N.daysBetween(a.dueDate, todayStr()); if(d<-21||d>290) return "That date doesn't look right. Check the year."; return ""; }},
+  {k:"babyMonths", only:a=>a.sex==="female" && a.status==="breastfeeding", t:"How old is your baby?", opts:[["2","Under 6 months"],["8","6 months or older"]]},
+  {k:"bfMode", t:"Do you know your body fat percentage?", sub:"It makes your numbers more accurate. A tape measure works well.", opts:[["known","Yes, I know it"],["tape","Estimate it from tape measurements","Takes a minute with a soft tape measure"],["skip","Skip this"]]},
+  {k:"bf", type:"fields", only:a=>a.bfMode==="known", t:"What's your body fat percentage?", fields:[{k:"bf", label:"Body fat %", type:"number", wide:true}],
+    check:a=> (+a.bf>=3 && +a.bf<=60) ? "" : "Enter a body fat percentage between 3 and 60."},
+  {k:"tape", type:"fields", only:a=>a.bfMode==="tape", t:"Your measurements", sub:"Measure on bare skin, tape snug but not pressing in.",
+    fields:a=>[{k:"waist", label:"Waist (inches)", type:"number", tip:a.sex==="female"?"At the narrowest point":"At your belly button"},
+      {k:"neck", label:"Neck (inches)", type:"number", tip:"Just below the Adam's apple"},
+      ...(a.sex==="female"?[{k:"hips", label:"Hips (inches)", type:"number", tip:"At the widest point"}]:[])],
+    check:a=>{ if(!(+a.waist>15&&+a.waist<80)) return "Enter your waist in inches."; if(!(+a.neck>8&&+a.neck<30)) return "Enter your neck in inches.";
+      if(a.sex==="female" && !(+a.hips>20&&+a.hips<90)) return "Enter your hips in inches."; return ""; }},
+  {k:"life", t:"Outside your workouts, how active are you?", sub:"Your training days come from your plan automatically.", opts:[["sit","Mostly sitting","Desk job, driving"],["some","On my feet some","Errands, chasing kids"],["most","On my feet most of the day","Retail, teaching, nursing"],["physical","Physical job","Construction, warehouse, landscaping"]]},
+  {k:"workDays", only:()=>!S.plan, t:"How many days a week do you work out?", opts:[["0","None right now"],["2","1 to 2"],["3","3"],["4","4"],["5","5"],["6","6 or more"]]},
+  {k:"goal", only:a=>!(a.sex==="female" && a.status==="pregnant"), t:"What's your goal?", opts:a=>[["cut","Lose fat (cut)"],["maintain","Maintain or recomp","Hold your weight while you build muscle and lose fat slowly"],...(a.status==="breastfeeding"&&a.sex==="female"?[]:[["bulk","Build muscle (lean bulk)"]])]},
+  {k:"pace", only:a=>!(a.sex==="female" && a.status==="pregnant") && (a.goal==="cut"||a.goal==="bulk"), t:"How fast?",
+    sub:"Faster isn't always better. Steady keeps more muscle and energy.",
+    opts:a=> a.goal==="cut" ? (a.sex==="female" && a.status==="breastfeeding" ? [["steady","Steady","About 0.5% of body weight a week. The safe pace while breastfeeding."]] :
+      [["steady","Steady","About 0.5% of body weight a week"],["moderate","Moderate","About 0.75% a week"],["aggressive","Aggressive","About 1% a week. Hard to sustain."]])
+      : [["slow","Slow","About 0.25% a week. Least fat gain."],["standard","Standard","About 0.5% a week"]]},
+  {k:"carbs", only:()=>!!S.plan, t:"Carbs every day, or more on training days?", opts:[["same","Same every day"],["cycle","More on training days","Less on rest days, same weekly total"]]},
+];
+const CQ = [
+  {k:"weeks", t:"How long do you want to cut?", opts:[["6","6 weeks"],["8","8 weeks"],["12","12 weeks"]]},
+  {k:"pace", t:"How fast?", sub:"Steady keeps more muscle and energy.", opts:a=> S.profile.status==="breastfeeding" ? [["steady","Steady","About 0.5% of body weight a week. The safe pace while breastfeeding."]] :
+    [["steady","Steady","About 0.5% of body weight a week"],["moderate","Moderate","About 0.75% a week"],["aggressive","Aggressive","About 1% a week. Hard to sustain."]]},
+];
+
+let F = null, bi = 0, bview = "q";
+function visibleQ(){ return F.qs.filter(q=>!q.only || q.only(F.a)); }
+const optsOf = q => typeof q.opts === "function" ? q.opts(F.a) : q.opts;
+const fieldsOf = q => typeof q.fields === "function" ? q.fields(F.a) : q.fields;
+function openFlow(flow){ F = flow; bi = 0; bview = "q"; $("#builder").hidden = false; document.body.classList.add("on-home"); renderBuilder(); }
 function closeBuilder(){ $("#builder").hidden = true; document.body.classList.remove("on-home"); render(); }
 function answered(q){
-  const v = BA[q.k];
+  if(q.type==="fields") return !(q.check && q.check(F.a));
+  const v = F.a[q.k];
   if(q.multi) return Array.isArray(v) && v.length>0;
-  return v!==undefined && v!=="";
+  return v!==undefined && v!=="" && optsOf(q).some(o=>String(o[0])===String(v));
 }
 function renderBuilder(){
   const qs = visibleQ(), el = $("#builder");
-  if(bview==="sum") return renderSummary();
+  if(bview==="sum") return F.summary(el);
+  if(bi >= qs.length) bi = qs.length-1;
   const q = qs[bi];
-  if(q.dflt && BA[q.k]===undefined) BA[q.k] = q.dflt;
+  if(q.dflt && F.a[q.k]===undefined) F.a[q.k] = q.dflt;
   const pct = Math.round((bi)/(qs.length)*100);
-  const val = BA[q.k];
-  const sel = o => q.multi ? (val||[]).includes(o) : String(val)===o;
+  let body;
+  if(q.type==="fields"){
+    body = `<div class="flds">${fieldsOf(q).map(f=>`<div class="field${f.wide?" wide":""}"><label for="q-${f.k}">${esc(f.label)}</label><input id="q-${f.k}" data-fk="${f.k}" type="${f.type==="date"?"date":"text"}" ${f.type==="number"?'inputmode="decimal"':""} value="${esc(F.a[f.k]??"")}">${f.tip?`<div class="tip">${esc(f.tip)}</div>`:""}</div>`).join("")}</div>`;
+  } else {
+    const val = F.a[q.k];
+    const sel = o => q.multi ? (val||[]).includes(o) : String(val)===String(o);
+    body = `<div class="opts" role="${q.multi?"group":"radiogroup"}">${optsOf(q).map(([v,l,sub])=>`<button class="opt${q.multi?"":" single"}" data-opt="${esc(v)}" aria-pressed="${sel(v)}" role="${q.multi?"checkbox":"radio"}" aria-checked="${sel(v)}"><span class="box">${sel(v)?"✓":""}</span><span>${esc(l)}${sub?`<small>${esc(sub)}</small>`:""}</span></button>`).join("")}</div>`;
+  }
   el.innerHTML = `<div class="in">
     <div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div><span class="sub" style="margin:0">${bi+1} of ${qs.length}</span></div>
     <h2>${esc(q.t)}</h2>${q.sub?`<p class="sub">${esc(q.sub)}</p>`:""}
-    <div class="opts" role="${q.multi?"group":"radiogroup"}">${q.opts.map(([v,l,sub])=>`<button class="opt${q.multi?"":" single"}" data-opt="${esc(v)}" aria-pressed="${sel(v)}" role="${q.multi?"checkbox":"radio"}" aria-checked="${sel(v)}"><span class="box">${sel(v)?"✓":""}</span><span>${esc(l)}${sub?`<small>${esc(sub)}</small>`:""}</span></button>`).join("")}</div>
-    <div class="err" id="berr"></div></div>
-    <div class="bnav"><div class="in2"><button data-b="back"${bi===0?" disabled":""}>Back</button><button class="next" data-b="next">${bi===qs.length-1?"See my plan":"Next"}</button></div></div>`;
+    ${body}
+    <div class="err" id="berr" role="alert"></div></div>
+    <div class="bnav"><div class="in2"><button data-b="back"${bi===0?" disabled":""}>Back</button><button class="next" data-b="next">${bi===qs.length-1?F.lastLabel:"Next"}</button></div></div>`;
   el.scrollTop = 0;
 }
-function renderSummary(){
-  const plan = E.generate(BA), el = $("#builder");
-  const days = plan.days.map((d,i)=>`<div class="pday"><b>Day ${i+1}: ${esc(d.name)}</b>${d.rest?`<div class="rest">${d.name==="Rest"?"Rest":"Walk, stretch or easy cardio"}</div>`:`<ol>${d.ex.map(e=>`<li>${esc(e.n)} <span class="sub">${e.wk[0].s} × ${esc(e.wk[0].r)}</span></li>`).join("")}</ol>`}</div>`).join("");
-  el.innerHTML = `<div class="in">
-    <div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><div class="bar"><i style="width:100%"></i></div></div>
-    <h2>${esc(plan.title)}</h2><p class="sub">4 weeks. Week 1 is shown; the app adjusts sets, reps and weight each week.</p>
-    ${plan.warning?`<div class="warn"><b>Stop and call your provider</b> ${esc(plan.warning.replace(/^Stop and call your OB or midwife if you notice /,"if you notice "))}</div>`:""}
-    ${plan.notes.length?`<div class="card"><ul style="margin:0;padding-left:18px">${plan.notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul></div>`:""}
-    ${days}</div>
-    <div class="bnav"><div class="in2"><button data-b="back">Change answers</button><button class="next" data-b="start">Start today</button></div></div>`;
-  el.scrollTop = 0;
-}
+$("#builder").addEventListener("input", e=>{ const k = e.target.dataset.fk; if(k){ F.a[k] = e.target.value.trim(); $("#berr").textContent = ""; } });
 $("#builder").addEventListener("click", e=>{
   const t = e.target.closest("button"); if(!t) return;
   const qs = visibleQ(), q = qs[bi];
@@ -618,7 +794,7 @@ $("#builder").addEventListener("click", e=>{
   if(t.dataset.opt!==undefined){
     const v = t.dataset.opt;
     if(q.multi){
-      let arr = (BA[q.k]||[]).slice();
+      let arr = (F.a[q.k]||[]).slice();
       if(arr.includes(v)) arr = arr.filter(x=>x!==v);
       else {
         if(v===q.none) arr = [];
@@ -626,25 +802,165 @@ $("#builder").addEventListener("click", e=>{
         (q.excl||[]).forEach(g=>{ if(g.includes(v)) arr = arr.filter(x=>!g.includes(x)); });
         arr.push(v);
       }
-      BA[q.k] = arr; renderBuilder();
+      F.a[q.k] = arr; renderBuilder();
     } else {
-      BA[q.k] = v; renderBuilder();
+      F.a[q.k] = v; renderBuilder();
       setTimeout(()=>{ if(bview==="q" && visibleQ()[bi]===q){ next(); } }, 220);
     }
     return;
   }
   if(t.dataset.b==="back"){ if(bview==="sum"){ bview="q"; bi = visibleQ().length-1; } else if(bi>0) bi--; renderBuilder(); return; }
   if(t.dataset.b==="next"){ next(); return; }
-  if(t.dataset.b==="start"){
-    S.plan = E.generate(BA); S.settings.start = todayStr(); cur = todayStr(); tab = "train";
-    cacheLocal(); setStatus("Your new plan starts today"); closeBuilder(); window.scrollTo(0,0); return;
-  }
+  if(t.dataset.b==="start"){ F.start(); return; }
 });
 function next(){
   const qs = visibleQ(), q = qs[bi];
-  if(!answered(q)){ $("#berr").textContent = q.multi ? "Pick at least one option." : "Pick an option to continue."; return; }
+  if(!answered(q)){ $("#berr").textContent = q.type==="fields" ? q.check(F.a) : q.multi ? "Pick at least one option." : "Pick an option to continue."; return; }
   if(bi < qs.length-1){ bi++; renderBuilder(); } else { bview = "sum"; renderBuilder(); }
 }
+function sumShell(el, title, sub, inner, startLabel){
+  el.innerHTML = `<div class="in">
+    <div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><div class="bar"><i style="width:100%"></i></div></div>
+    <h2>${esc(title)}</h2>${sub?`<p class="sub">${esc(sub)}</p>`:""}${inner}</div>
+    <div class="bnav"><div class="in2"><button data-b="back">Change answers</button><button class="next" data-b="start">${esc(startLabel)}</button></div></div>`;
+  el.scrollTop = 0;
+}
+
+/* training plan flow */
+function openBuilder(prefill){
+  const a = S.plan && S.plan.answers ? JSON.parse(JSON.stringify(S.plan.answers)) : {};
+  if(a.trimester && !a.dueDate) delete a.trimester;
+  if(S.profile.status==="pregnant" && S.profile.dueDate && !a.dueDate) a.dueDate = S.profile.dueDate;
+  Object.assign(a, prefill||{});
+  openFlow({qs:TQ, a, lastLabel:"See my plan", summary:planSummary, start:startPlan});
+}
+function planSummary(el){
+  const plan = E.generate({...F.a, start:todayStr()});
+  const days = plan.days.map((d,i)=>`<div class="pday"><b>Day ${i+1}: ${esc(d.name)}</b>${d.rest?`<div class="rest">${d.name==="Rest"?"Rest":"Walk, stretch or easy cardio"}</div>`:`<ol>${d.ex.map(e=>`<li>${esc(e.n)} <span class="sub">${e.wk[0].s} × ${esc(e.wk[0].r)}</span></li>`).join("")}</ol>`}</div>`).join("");
+  sumShell(el, plan.title, "4 weeks. Week 1 is shown; the app adjusts sets, reps and weight each week.",
+    `${plan.warning?`<div class="warn"><b>Stop and call your provider</b> ${esc(plan.warning.replace(/^Stop and call your OB or midwife if you notice /,"if you notice "))}</div>`:""}
+    ${plan.notes.length?`<div class="card"><ul style="margin:0;padding-left:18px">${plan.notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul></div>`:""}${days}`, "Start today");
+}
+function startPlan(){
+  const a = {...F.a, start:todayStr()};
+  S.plan = E.generate(a); S.settings.start = todayStr(); cur = todayStr(); tab = "train";
+  syncProfileFromPlan(a);
+  cacheLocal(); setStatus("Your new plan starts today"); closeBuilder(); window.scrollTo(0,0);
+}
+const SINCE_MONTHS = {lt6:1, "6w":2, "3m":4, "6m":8};
+function clearPregSeen(){ if(S.nutri && S.nutri.seen) Object.keys(S.nutri.seen).forEach(k=>{ if(k.startsWith("preg")) delete S.nutri.seen[k]; }); }
+function syncProfileFromPlan(a){
+  const around = a.around || [], pf = S.profile;
+  if(around.includes("pregnant")){ pf.sex = "female"; pf.status = "pregnant"; pf.dueDate = a.dueDate; }
+  else if(around.includes("postpartum")){
+    pf.sex = "female"; pf.babyMonths = SINCE_MONTHS[a.since] || 2;
+    if(pf.status==="pregnant") pf.status = S.nutri ? "ask" : "none";
+  } else if(pf.status==="pregnant"){
+    // pregnancy removed before the baby arrived: go back to normal quietly, no messages
+    pf.status = "none"; delete pf.dueDate;
+    clearPregSeen();
+  }
+}
+
+/* nutrition flow */
+function openNutrition(){
+  const prev = S.nutri ? JSON.parse(JSON.stringify(S.nutri.a)) : {};
+  const pf = S.profile, b = latestBody();
+  const a = {...prev};
+  if(pf.sex) a.sex = pf.sex;
+  if(pf.age) a.age = String(pf.age);
+  if(pf.heightIn){ a.hFt = String(Math.floor(pf.heightIn/12)); a.hIn = String(Math.round(pf.heightIn%12)); }
+  if(b.weight) a.weight = String(Math.round(b.weight*10)/10);
+  if(pf.status && pf.status!=="ask") a.status = pf.status;
+  if(pf.dueDate) a.dueDate = pf.dueDate;
+  if(pf.babyMonths) a.babyMonths = pf.babyMonths>=6 ? "8" : "2";
+  openFlow({qs:NQ, a, lastLabel:"See my targets", summary:nutriSummary, start:startNutrition});
+}
+function nutriAnswersToInputs(a){
+  const female = a.sex==="female";
+  return {...a, heightIn:(+a.hFt||0)*12+(+a.hIn||0), weight:+a.weight, age:+a.age,
+    status: female ? (a.status||"none") : "none", dueDate: female && a.status==="pregnant" ? a.dueDate : "",
+    babyMonths: +a.babyMonths||0, goal: female && a.status==="pregnant" ? "maintain" : a.goal};
+}
+function nutriSummary(el){
+  const p = nutriAnswersToInputs(F.a);
+  const b = latestBody();
+  const r = N.compute(p, {today:todayStr(), trainingDays: S.plan ? trainingDaysPerWeek() : (+F.a.workDays||0), bf:p.bfMode==="tape"?null:b.bf, adj:0});
+  const carbs = r.cycle ? `${r.carbsTrain} g training days · ${r.carbsRest} g rest days` : `${r.carbs} g`;
+  sumShell(el, `${r.cal.toLocaleString()} calories a day`, goalLine(r),
+    `<div class="card"><dl class="kv">
+      <dt>Protein</dt><dd>${r.protein} g</dd><dt>Carbs</dt><dd>${carbs}</dd><dt>Fat</dt><dd>${r.fat} g</dd>
+      <dt>Body fat</dt><dd>${r.bf!=null?r.bf+"%":"Not used"}</dd><dt>BMI</dt><dd>${r.bmi}</dd>
+      <dt>Burn at rest</dt><dd>${r.bmr.toLocaleString()} cal</dd><dt>Maintenance</dt><dd>${r.tdee.toLocaleString()} cal</dd>
+      ${r.extra?`<dt>${r.status==="pregnant"?"Pregnancy":"Breastfeeding"}</dt><dd>+${r.extra} cal</dd>`:""}
+    </dl></div>
+    ${r.notes.length?`<div class="card"><ul style="margin:0;padding-left:18px">${r.notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul></div>`:""}
+    <p class="sub">BMI is shown for reference only. It can't tell muscle from fat, so your targets don't use it.</p>`, "Use these targets");
+}
+function startNutrition(){
+  const a = F.a, p = nutriAnswersToInputs(a), pf = S.profile;
+  const wasPreg = pf.status==="pregnant";
+  pf.sex = a.sex; pf.age = +a.age; pf.heightIn = p.heightIn;
+  pf.status = p.status; if(p.status==="pregnant") pf.dueDate = a.dueDate; else if(wasPreg && p.status!=="breastfeeding") delete pf.dueDate;
+  if(p.status==="breastfeeding") pf.babyMonths = +a.babyMonths||2;
+  const keep = S.nutri || {};
+  if(wasPreg && p.status!=="pregnant") clearPregSeen();
+  S.nutri = {a:{...a}, adj: keep.adj||0, cut: keep.cut||null, ramp: keep.ramp||null, seen: keep.seen||{}, bfOff: keep.bfOff||"", bfFromAsk: keep.bfFromAsk||false, snooze: keep.snooze||"", started: keep.started||todayStr()};
+  if(p.status==="pregnant" && S.nutri.cut) S.nutri.cut = null;
+  // the first weigh-in for the trend check, if there isn't one today
+  const D = day(todayStr()); if(!num(D.weight) && +a.weight) { D.weight = String(a.weight); }
+  cacheLocal(); tab = "eat"; closeBuilder(); setStatus("Your nutrition targets are set"); window.scrollTo(0,0);
+}
+
+/* cut flow */
+function openCut(){
+  if(!S.nutri){ openNutrition(); return; }
+  openFlow({qs:CQ, a:{pace: S.profile.status==="breastfeeding" ? "steady" : (S.nutri.a.pace && S.nutri.a.goal==="cut" ? S.nutri.a.pace : "steady")}, lastLabel:"See my cut", summary:cutSummary, start:startCut});
+}
+function cutSummary(el){
+  const cut = {start:todayStr(), weeks:+F.a.weeks, pace:F.a.pace};
+  const b = latestBody(), n = S.nutri;
+  const r = N.compute(nutriInputs(), {today:todayStr(), trainingDays:trainingDaysPerWeek(), weight:b.weight, bf:b.bf, waist:b.waist, adj:n.adj||0, cut});
+  const end = parse(addDays(todayStr(), cut.weeks*7)).toLocaleDateString(undefined,{month:"long",day:"numeric"});
+  sumShell(el, `${r.cal.toLocaleString()} calories a day`, `${cut.weeks}-week cut, ending ${end}`,
+    `<div class="card"><dl class="kv"><dt>Protein</dt><dd>${r.protein} g</dd><dt>Carbs</dt><dd>${r.carbs} g</dd><dt>Fat</dt><dd>${r.fat} g</dd><dt>Planned loss</dt><dd>about ${Math.abs(Math.round(r.delta/500*10)/10)} lb a week</dd></dl></div>
+    <p class="sub">Keep lifting heavy during the cut. It tells your body to hold on to muscle. Adonis checks your weekly trend and suggests changes if you're losing too fast or too slow.</p>
+    ${r.notes.length?`<div class="card"><ul style="margin:0;padding-left:18px">${r.notes.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`:""}`, "Start my cut");
+}
+function startCut(){
+  S.nutri.cut = {start:todayStr(), weeks:+F.a.weeks, pace:F.a.pace};
+  S.nutri.ramp = null; S.nutri.adj = 0; S.nutri.snooze = todayStr(); S.nutri.started = todayStr();
+  cacheLocal(); tab = "eat"; closeBuilder(); setStatus("Your cut starts today"); window.scrollTo(0,0);
+}
+function rampToMaintenance(){
+  const fromCal = todayTargets().cal;
+  S.nutri.cut = null; S.nutri.a.goal = "maintain"; S.nutri.adj = 0;
+  S.nutri.ramp = {start:todayStr(), from:fromCal, days:14};
+  S.nutri.snooze = todayStr(); S.nutri.started = todayStr();
+  cacheLocal(); render();
+}
+
+/* cross-tab actions */
+document.addEventListener("click", e=>{
+  const t = e.target.closest("button"); if(!t) return;
+  if(t.dataset.seen){ S.nutri.seen = S.nutri.seen||{}; S.nutri.seen[t.dataset.seen] = true; cacheLocal(); render(); return; }
+  const act = t.dataset.act; if(!act) return;
+  if(act==="nutri-edit"){ openNutrition(); return; }
+  if(act==="nutri-why"){ const w = $("#why"); w.hidden = !w.hidden; t.textContent = w.hidden ? "How this is calculated" : "Hide details"; return; }
+  if(act==="start-cut"){ tab = "eat"; render(); openCut(); return; }
+  if(act==="cut-end" || act==="cut-finish"){ rampToMaintenance(); return; }
+  if(act==="block-dismiss"){ S.blockSeen[t.dataset.cycle] = true; cacheLocal(); render(); return; }
+  if(act==="rebuild-preg"){ const ar = (S.plan && S.plan.answers && S.plan.answers.around || []).filter(x=>x!=="none" && x!=="postpartum"); if(!ar.includes("pregnant")) ar.push("pregnant"); openBuilder({around:ar, dueDate:S.profile.dueDate}); return; }
+  if(act==="bf-yes"){ S.profile.status = "breastfeeding"; delete S.profile.dueDate; clearPregSeen(); if(S.nutri){ S.nutri.bfFromAsk = true; if(S.nutri.seen) delete S.nutri.seen["bf-on"]; S.nutri.a.status="breastfeeding"; S.nutri.a.babyMonths = (S.profile.babyMonths||2)>=6?"8":"2"; if(S.nutri.a.goal==="bulk") S.nutri.a.goal="maintain"; } cacheLocal(); render(); return; }
+  if(act==="bf-no"){ S.profile.status = "none"; delete S.profile.dueDate; clearPregSeen(); if(S.nutri) S.nutri.a.status="none"; cacheLocal(); render(); return; }
+  if(act==="bf-stop"){
+    const fromCal = todayTargets().cal;
+    S.profile.status = "none"; S.nutri.a.status = "none"; S.nutri.bfOff = todayStr();
+    S.nutri.ramp = {start:todayStr(), from:fromCal, days:14}; cacheLocal(); render(); return;
+  }
+  if(act==="adj-yes"){ S.nutri.adj = (S.nutri.adj||0) + (+t.dataset.adj); S.nutri.snooze = todayStr(); cacheLocal(); setStatus("Targets updated"); render(); return; }
+  if(act==="adj-no"){ S.nutri.snooze = todayStr(); cacheLocal(); render(); return; }
+});
 
 loadLocal();
 render();

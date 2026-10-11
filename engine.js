@@ -248,6 +248,20 @@ const PREG_WEEK_NOTES = [
 
 const PREG_WARNING = "Stop and call your OB or midwife if you notice vaginal bleeding, regular painful contractions, fluid leaking, dizziness or feeling faint, a headache, chest pain, muscle weakness that affects your balance, calf pain or swelling, or shortness of breath before you start.";
 
+/* Trimester the plan must be safe for: the one reached by the END of the 4-week block,
+   worked out from the due date (or an older plan's trimester answer). */
+function addDaysISO(iso, n) { const [y, m, d] = iso.split("-").map(Number); const t = new Date(Date.UTC(y, m - 1, d + n)); return t.toISOString().slice(0, 10); }
+function todayISO() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function trimesterFor(a) {
+  if (a.dueDate) {
+    const end = addDaysISO(a.start || todayISO(), 27);
+    const [y1, m1, d1] = a.dueDate.split("-").map(Number), [y2, m2, d2] = end.split("-").map(Number);
+    const weeks = 40 - (Date.UTC(y1, m1 - 1, d1) - Date.UTC(y2, m2 - 1, d2)) / 864e5 / 7;
+    return weeks < 14 ? 1 : weeks < 28 ? 2 : 3;
+  }
+  return +a.trimester || 1;
+}
+
 /* ---------- context: what this person can and can't do ---------- */
 function context(a) {
   const ctx = { eq: new Set(), block: new Set(), maxD: 5, level: +a.experience || 1, intensity: +a.experience || 1, notes: [], mode: "normal" };
@@ -266,7 +280,7 @@ function context(a) {
   if (around.has("pregnant")) {
     ctx.mode = "pregnant";
     ["impact", "fall", "ab", "crunch", "plank", "headdown"].forEach(f => ctx.block.add(f));
-    const tri = +a.trimester || 1;
+    const tri = trimesterFor(a);
     if (tri >= 2) { ctx.block.add("supine"); ctx.block.add("prone"); ctx.block.add("bellyload"); }
     if (tri >= 3) ctx.block.add("balance");
     ctx.intensity = +a.prePreg || 2;
@@ -461,7 +475,7 @@ function generate(a) {
   if (ctx.mode === "pregnant") {
     notes.push("Confirm this plan with your OB or midwife before you start.");
     if (goal === "fatloss") notes.push("Pregnancy isn't the time to cut, so this plan is set for strength and fitness instead of fat loss.");
-    notes.push("No crunches, planks, jumping, slams or max-effort lifts." + ((+a.trimester || 1) >= 2 ? " Nothing lying flat on your back or belly." : ""));
+    notes.push("No crunches, planks, jumping, slams or max-effort lifts." + (trimesterFor(a) >= 2 ? " Nothing lying flat on your back or belly." : ""));
   }
   if (ctx.mode === "postpartum") {
     notes.push("Make sure you've been cleared for exercise at your postpartum checkup.");
@@ -522,5 +536,5 @@ function audit(p) {
   return issues;
 }
 
-root.AdonisEngine = { LIB, BY_NAME, generate, swap, audit, PF_NOTES };
+root.AdonisEngine = { LIB, BY_NAME, generate, swap, audit, PF_NOTES, trimesterFor };
 })(typeof window !== "undefined" ? window : globalThis);
