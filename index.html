@@ -436,7 +436,7 @@ body.on-home{overflow:hidden}
 <script src="foods.js"></script>
 <script src="coach.js"></script>
 <script>
-const DEFAULTS = {start:todayStr(), cal:2400, protein:175, carbs:265, fat:70, goalWeight:175, goalBf:15, goalDate:""};
+const DEFAULTS = {start:todayStr(), cal:2400, protein:175, carbs:265, fat:70, goalWeight:"", goalBf:"", goalDate:""};
 const RECOVERY = ["Walking","Yoga","Stretching","Mobility","Hiking","Foam rolling","Biking"];
 
 /* ---------- state ---------- */
@@ -1124,8 +1124,8 @@ function progressView(){
   // goal + program settings
   h += `<h2>Your goal</h2>
     <div class="card"><div class="row">
-      <div class="field"><label for="g-w">Weight lb</label><input id="g-w" data-set="goalWeight" inputmode="decimal" value="${esc(s.goalWeight)}"></div>
-      <div class="field"><label for="g-bf">Body fat %</label><input id="g-bf" data-set="goalBf" inputmode="decimal" value="${esc(s.goalBf)}"></div>
+      <div class="field"><label for="g-w">Weight lb</label><input id="g-w" data-set="goalWeight" inputmode="decimal" placeholder="e.g. 165" value="${esc(s.goalWeight)}"></div>
+      <div class="field"><label for="g-bf">Body fat %</label><input id="g-bf" data-set="goalBf" inputmode="decimal" placeholder="e.g. 15" value="${esc(s.goalBf)}"></div>
       <div class="field" style="grid-column:span 2"><label for="g-date">By</label><input id="g-date" type="date" value="${esc(s.goalDate)}"></div>
       <div class="field" style="grid-column:span 2"><label for="t-start">Program start</label><input id="t-start" type="date" value="${esc(s.start)}"></div>
     </div></div>
