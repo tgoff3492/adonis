@@ -180,6 +180,7 @@ details.notes ul{margin:6px 0 0;padding-left:18px}
 .meal ol.steps{margin:8px 0 0;padding-left:22px;font-size:15px;line-height:1.5}
 .meal ol.steps li{margin:0 0 8px}
 .meal .xtra{font-size:14px;margin:6px 0 0;padding:8px 10px;background:var(--field);border-radius:8px}
+.prepnote{background:var(--field);border-left:3px solid var(--blue);border-radius:8px;padding:10px 12px;margin:0 0 10px;font-size:14px}
 .prepsteps{margin:0;padding-left:22px;font-size:15px;line-height:1.5}
 .prepsteps li{margin:0 0 10px}
 .meal .linkbtn.done{background:var(--cal);border-color:var(--cal);color:#fff}
@@ -881,14 +882,15 @@ function todayView(){
   return `<h2>This week</h2>
     <div class="stats prog">
       <div class="stat"><b>${st.done}${st.planned?`/${st.planned}`:""}</b><span>Workouts</span></div>
-      <div class="stat"><b>${st.prot}/${Math.max(1, st.days.filter(d=>d<=todayStr()).length)}</b><span>Protein days</span></div>
+      <div class="stat"><b>${st.logged?`${st.prot}/${st.logged}`:"—"}</b><span>Protein goal hit (days logged)</span></div>
       <div class="stat"><b>${isPregnant()?"—":st.prs.length}</b><span>New records</span></div>
     </div>
     <div class="stats prog">
       <div class="stat"><b>${sk.weeks}</b><span>Week streak</span></div>
-      <div class="stat"><b>${sk.protein}</b><span>Protein streak (days)</span></div>
+      <div class="stat"><b>${sk.protein}</b><span>Days in a row at protein goal</span></div>
       <div class="stat"><b>${st.change==null?"—":(st.change>0?"+":"")+st.change}</b><span>Weight vs last week</span></div>
     </div>
+    <p class="tip statnote">A day counts toward your protein goal when you log food and reach at least 90% of your protein target${targetsOn(todayStr()).protein?` (${targetsOn(todayStr()).protein} g today)`:""}.</p>
     <h2>Check-in</h2><p class="sub">Weigh in most mornings, same conditions. The weekly average is what matters.</p>
     <div class="card"><div class="row">
       <div class="field" style="grid-column:span 2"><label for="bw">Weight (lb)</label><input id="bw" inputmode="decimal" value="${esc(D.weight)}"></div>
@@ -1608,11 +1610,13 @@ function mealSection(D, T){
       <div class="mac">${cal} cal · P ${Math.round(m.p)} · C ${Math.round(m.c)} · F ${Math.round(m.f)}</div>
       <ul>${m.items.map(it=>`<li>${esc(MP.amountLine(it.ing,it.g,it.side))}</li>`).join("")}</ul>
       <details><summary>Cook it, step by step</summary><ol class="steps">${m.steps.map(st=>`<li>${esc(st)}</li>`).join("")}</ol>${extra}</details>
-      <div class="acts"><button class="linkbtn${isLogged?" done":" go"}" data-act="meal-log" data-i="${i}">${isLogged?"Logged ✓":"Log it"}</button>${MP.swapOptions(S.mealplan.week.days[di], i, pr).length && !batchLocked?`<button class="linkbtn" data-act="meal-swap" data-i="${i}">Swap meal</button>`:""}${m.flavors.length>1 && !batchLocked?`<button class="linkbtn" data-act="meal-flavor" data-i="${i}">New flavor</button>`:""}</div></div>`;
+      <div class="acts"><button class="linkbtn${isLogged?" done":" go"}" data-act="meal-log" data-i="${i}">${isLogged?"Logged ✓":"Log it"}</button>${MP.swapOptions(S.mealplan.week.days[di], i, pr, cur<=todayStr()).length && !batchLocked?`<button class="linkbtn" data-act="meal-swap" data-i="${i}">Swap meal</button>`:""}${m.flavors.length>1 && !batchLocked?`<button class="linkbtn" data-act="meal-flavor" data-i="${i}">New flavor</button>`:""}</div></div>`;
   }).join("");
   const tot = dp.total, off = Math.abs(tot.cal - T.cal)/T.cal > 0.1 || Math.abs(tot.p - T.protein)/T.protein > 0.12;
   const bigTip = dp.meals.some(m=>m.cal > 1150) && pr.meals < 5 ? `<p class="tip">At ${T.cal.toLocaleString()} calories a day, ${pr.meals < 4 ? "4 or 5" : "5"} meals keeps each plate a normal size. You can change it in Meal preferences.</p>` : "";
-  const pregTip = (bigTip) + (pr.pregnant ? `<p class="tip">Pregnancy-safe: no cold deli meat, eggs and meat cooked all the way through, and canned tuna at most twice a week.</p>` : "");
+  const tmr = di < 6 ? MP.aheadMeals(S.mealplan.week.days[di+1], pr) : [];
+  const aheadTip = tmr.length ? `<div class="prepnote"><b>Prep tonight:</b> ${tmr.map(x=>`tomorrow's ${esc(x.label.toLowerCase())}, ${esc(x.name.charAt(0).toLowerCase()+x.name.slice(1))}`).join("; ")}. It takes about 5 minutes and needs to sit in the fridge overnight.</div>` : "";
+  const pregTip = aheadTip + (bigTip) + (pr.pregnant ? `<p class="tip">Pregnancy-safe: no cold deli meat, eggs and meat cooked all the way through, and canned tuna at most twice a week.</p>` : "");
   const firstOpen = dp.meals.findIndex((m,i)=>!logged.has(S.mealplan.week.start+"-"+di+"-"+i));
   const carKey = S.mealplan.week.start+"-"+di;
   if(MEALPOS.key !== carKey){ MEALPOS = {key:carKey, i: firstOpen<0 ? 0 : firstOpen}; }
@@ -1694,7 +1698,7 @@ document.addEventListener("click", e=>{
   const di = weekDayIndex(cur), i = +t.dataset.i; if(di<0) return;
   const day = S.mealplan.week.days[di];
   if(act==="meal-swap"){
-    const opts = MP.swapOptions(day, i, mealPrefs()); if(!opts.length) return;
+    const opts = MP.swapOptions(day, i, mealPrefs(), cur<=todayStr()); if(!opts.length) return;
     const seed = Math.floor(Math.random()*1000);
     day[i].id = opts[seed % opts.length]; day[i].fl = MP.firstFlavor(day[i].id, mealPrefs(), seed); day[i].v = seed; cacheLocal(); render(); return;
   }
@@ -1780,7 +1784,7 @@ function recapCard(){
     <div class="rg">
       <div><b>${st.done}${st.planned?` of ${st.planned}`:""}</b><span>workouts done</span></div>
       <div><b>${st.prs.length}</b><span>new record${st.prs.length===1?"":"s"}</span></div>
-      <div><b>${st.prot} of 7</b><span>days you hit protein</span></div>
+      <div><b>${st.logged?`${st.prot} of ${st.logged}`:"—"}</b><span>logged days at protein goal</span></div>
       <div><b>${sk.weeks}</b><span>week streak</span></div>
     </div>
     <ul>${st.prs.slice(0,3).map(x=>`<li>${esc(x.name)}: ${esc(x.w)} lb × ${esc(x.r)}</li>`).join("")}<li>${esc(weightLine(st))}</li></ul>
@@ -2007,6 +2011,28 @@ async function lookupOFF(code, raw){
     return parseOFF(j.product);
   }catch(e){ return {found:false, offline:true}; }
 }
+/* brand-first names for packaged foods, e.g. "H-E-B Large Eggs" */
+const BRAND_FIX = {"heb":"H-E-B","h e b":"H-E-B","h-e-b":"H-E-B","heb organics":"H-E-B Organics","central market":"Central Market","hill country fare":"Hill Country Fare",
+  "kirkland":"Kirkland Signature","kirkland signature":"Kirkland Signature","great value":"Great Value","good gather":"Good & Gather","good and gather":"Good & Gather",
+  "365":"365","365 by whole foods market":"365","365 everyday value":"365","whole foods market":"365","trader joes":"Trader Joe's","trader joe s":"Trader Joe's","fairlife":"Fairlife","chobani":"Chobani"};
+function cleanBrand(raw){
+  let b = String(raw||"").split(",")[0].replace(/\s+/g," ").trim();
+  if(!b) return "";
+  const key = b.toLowerCase().replace(/['’]/g,"").replace(/&/g," ").replace(/[^a-z0-9-]+/g," ").replace(/\s+/g," ").trim();
+  if(BRAND_FIX[key]) return BRAND_FIX[key];
+  const k2 = key.replace(/-/g," ").trim(); if(BRAND_FIX[k2]) return BRAND_FIX[k2];
+  // all-lowercase database entries get capitalized; ALL CAPS is left alone since brands like RXBAR and KIND use it
+  if(b === b.toLowerCase())
+    b = b.toLowerCase().replace(/(^|[\s-])([a-z])/g, (m,a,c)=>a+c.toUpperCase());
+  return b;
+}
+function foodTitle(food){
+  const name = String(food.name||"").trim(), brand = cleanBrand(food.brand);
+  if(!brand) return name;
+  const flat = x => x.toLowerCase().replace(/[^a-z0-9]/g,"");
+  if(flat(name).includes(flat(brand)) || (flat(brand)==="heb" && /h\W?e\W?b/i.test(name))) return name;
+  return `${brand} ${name}`;
+}
 function parseOFF(p){
   const n = p.nutriments || {}, num_ = v => (v===undefined || v===null || v==="") ? null : +v;
   const per100 = {p:num_(n.proteins_100g), c:num_(n.carbohydrates_100g), f:num_(n.fat_100g)};
@@ -2019,7 +2045,7 @@ function parseOFF(p){
   const name = (p.product_name || p.product_name_en || p.generic_name || "").trim();
   if(!per || !name) return {found:false};
   const r1 = x => Math.round(x*10)/10;
-  return {found:true, name, brand:(p.brands||"").split(",")[0].trim(), label, grams, per:{p:r1(per.p), c:r1(per.c), f:r1(per.f)}, src:"off"};
+  return {found:true, name, brand:cleanBrand(p.brands), label, grams, per:{p:r1(per.p), c:r1(per.c), f:r1(per.f)}, src:"off"};
 }
 let FOODCTX = null;
 function updateFoodKV(){
@@ -2035,7 +2061,7 @@ function showFood(code, food){
 function foodHTML(){
   const {food, qty} = FOODCTX, m = k => Math.round(food.per[k]*qty);
   const cal = Math.round((food.k || (food.per.p*4 + food.per.c*4 + food.per.f*9)) * qty);
-  return `<div class="food">${food.brand?`<div class="brand">${esc(food.brand)}</div>`:""}<div class="fn">${esc(food.name)}</div>
+  return `<div class="food"><div class="fn">${esc(foodTitle(food))}</div>
     <div class="sub" style="margin:0">1 serving = ${esc(food.label)}${food.src==="me"?" (your entry)":""}</div>
     <div class="stepper"><button type="button" data-q="-1" aria-label="Less">−</button><input id="fqty" inputmode="decimal" value="${qty}" aria-label="Servings"><button type="button" data-q="1" aria-label="More">+</button><span id="fqunit">serving${qty===1?"":"s"}</span></div>
     <dl class="kv"><dt>Calories</dt><dd>${cal}</dd><dt>Protein</dt><dd>${m("p")} g</dd><dt>Carbs</dt><dd>${m("c")} g</dd><dt>Fat</dt><dd>${m("f")} g</dd></dl>
@@ -2047,11 +2073,11 @@ function foodHTML(){
 }
 function manualFood(code, offline, prefill){
   const f = prefill || {};
-  FOODCTX = {code, manual:true};
+  FOODCTX = {code, manual:true, prefill:prefill||null};
   openSheet(prefill ? "Fix this food" : "Add this food", `
     <p class="sub">${prefill ? "Update the numbers from the label. Adonis remembers your version for this barcode." : offline ? "You're offline, so this barcode can't be looked up right now. Enter it from the label and Adonis will remember it." : "This barcode isn't in the food database yet. Enter it once from the nutrition label and Adonis will remember it next time."}</p>
     <div class="card"><div class="row">
-      <div class="field wide"><label for="mf-name">Food name</label><input id="mf-name" value="${esc(f.name||"")}" placeholder="e.g. Protein bar"></div>
+      <div class="field wide"><label for="mf-name">Food name</label><input id="mf-name" value="${esc(f.name||"")}" placeholder="e.g. H-E-B Protein Bar"></div>
       <div class="field wide"><label for="mf-label">Serving size on the label</label><input id="mf-label" value="${esc(f.label||"")}" placeholder="e.g. 1 bar (60 g)"></div>
       <div class="field"><label for="mf-p">Protein g</label><input id="mf-p" inputmode="decimal" value="${f.per?esc(f.per.p):""}"></div>
       <div class="field"><label for="mf-c">Carbs g</label><input id="mf-c" inputmode="decimal" value="${f.per?esc(f.per.c):""}"></div>
@@ -2066,9 +2092,9 @@ document.addEventListener("click", e=>{
   if(t.dataset.q && FOODCTX){ FOODCTX.qty = Math.max(0.5, Math.round((FOODCTX.qty + (+t.dataset.q)*0.5)*2)/2); const q = $("#fqty"); if(q) q.value = FOODCTX.qty; updateFoodKV(); return; }
   if(t.dataset.act==="food-add" && FOODCTX){
     const {food, qty, code} = FOODCTX, D = day(cur), r = x => Math.round(x*qty);
-    const nm = `${food.name}${qty!==1?` (${qty} servings)`:""}`;
+    const title = foodTitle(food), nm = `${title}${qty!==1?` (${qty} servings)`:""}`;
     D.food.push({name:nm, p:r(food.per.p), c:r(food.per.c), f:r(food.per.f), ...(food.k?{k:r(food.k)}:{}), ...(code?{code}:{})});
-    saveDay(cur); closeBuilder(); setStatus(`Added ${food.name}`); return;
+    saveDay(cur); closeBuilder(); setStatus(`Added ${title}`); return;
   }
   if(t.dataset.act==="food-edit" && FOODCTX){ manualFood(FOODCTX.code, false, FOODCTX.food); return; }
   if(t.dataset.act==="food-rescan"){ closeBuilder(); scanBusy = false; openScanner(); return; }
@@ -2077,7 +2103,8 @@ document.addEventListener("click", e=>{
     const p = num($("#mf-p").value), c = num($("#mf-c").value), f = num($("#mf-f").value);
     if(!name){ $("#mf-err").textContent = "Enter a name for this food."; return; }
     if(!p && !c && !f){ $("#mf-err").textContent = "Enter protein, carbs or fat from the label."; return; }
-    const food = {found:true, name, brand:"", label, per:{p, c, f}, src:"me"};
+    const prevBrand = FOODCTX.prefill && FOODCTX.prefill.brand && !name.toLowerCase().includes(FOODCTX.prefill.brand.toLowerCase()) ? FOODCTX.prefill.brand : "";
+    const food = {found:true, name, brand:prevBrand, label, per:{p, c, f}, src:"me"};
     S.foods = S.foods || {}; S.foods[FOODCTX.code] = food; cacheLocal();
     showFood(FOODCTX.code, food); return;
   }

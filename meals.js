@@ -178,7 +178,8 @@ const GRAIN = {
    fl: flavor profiles that suit the meal. nm: name with {f} for the flavor.
    t: minutes. oven: °F. seasonAll: the seasoning covers the potatoes too.
    steps use tokens: {season} {grain} {starch} {liquid}. The sauce step is added on its own.
-   batch = keeps well for prep days, quick = 10 minutes or less */
+   batch = keeps well for prep days, quick = 10 minutes or less
+   ahead = has to be made earlier (e.g. the night before), so it's never put on the first day of a plan */
 const M = (id, name, slot, items, opt) => ({ id, name, slot, items: items.map(([ing, g, r]) => ({ ing, g, r })), ...(opt || {}) });
 const STARCH = "Heat the oven to 425°F. Cut the potatoes into 1-inch cubes, toss with a little of the oil and a pinch of salt, and roast on a sheet pan 30 to 35 minutes, flipping halfway, until browned and tender.";
 const SWEET_STARCH = "Heat the oven to 425°F. Cut the sweet potatoes into 1-inch cubes, toss with a little of the oil and a pinch of salt, and roast 25 to 30 minutes, flipping halfway.";
@@ -202,7 +203,7 @@ const MEALS = [
   M("tofuscramble", "Tofu scramble and potatoes", "b", [["tofu", 200, "p"], ["potato", 200, "c"], ["spinach", 50, "x"], ["peppers", 50, "x"], ["oil", 7, "f"]], { t: 35, oven: 425, seasonAll: 1,
     fl: ["southwest", "curry"], nm: "{f} tofu scramble and potatoes",
     steps: ["{starch}", "Press the tofu between paper towels for 5 minutes, then crumble it with your fingers.", "Heat the rest of the oil in a skillet over medium-high. Cook the diced peppers 3 minutes.", "Add the tofu and {season}. Cook, stirring, 5 to 6 minutes until lightly golden.", "Stir in the spinach until wilted. Serve with the potatoes."] }),
-  M("overnightoats", "Overnight oats", "b", [["oats", 60, "c"], ["pea", 30, "p"], ["berries", 100, "x"], ["chia", 15, "f"]], { batch: 1, quick: 1, t: 5,
+  M("overnightoats", "Overnight oats", "b", [["oats", 60, "c"], ["pea", 30, "p"], ["berries", 100, "x"], ["chia", 15, "f"]], { batch: 1, quick: 1, t: 5, ahead: "the night before",
     fl: ["berryvanilla", "cinnamon", "choc"], nm: "{f} overnight oats",
     steps: ["In a jar, stir together the oats, protein powder, chia seeds and {season}.", "Stir in {liquid} of water or unsweetened almond milk until there are no dry clumps.", "Cover and refrigerate overnight, or at least 4 hours.", "Top with the berries in the morning. Jars keep 4 days in the fridge, so make several at once."] }),
   M("smoothie", "Protein smoothie", "b", [["whey", 35, "p"], ["banana", 118, "c"], ["berries", 100, "x"], ["milk", 250, "x"], ["pb", 16, "f"]], { quick: 1, t: 5,
@@ -589,9 +590,12 @@ function planWeek(pr, start) {
         id = b.m.id; fl = b.fl; v = b.v;
       } else {
         const opts = shuffle(pool(slot));
-        let cands = opts.filter(m => !used.has(m.id) && !recent.slice(-2).some(r => r.has(m.id)) && tunaOK(m.id));
-        if (!cands.length) cands = opts.filter(m => !used.has(m.id) && tunaOK(m.id));
-        if (!cands.length) cands = [opts[0]];
+        // day 1 can't use make-ahead meals: nobody has had the chance to prep them yet
+        const aheadOK = m => d > 0 || !m.ahead;
+        let cands = opts.filter(m => !used.has(m.id) && !recent.slice(-2).some(r => r.has(m.id)) && tunaOK(m.id) && aheadOK(m));
+        if (!cands.length) cands = opts.filter(m => !used.has(m.id) && tunaOK(m.id) && aheadOK(m));
+        if (!cands.length) cands = opts.filter(aheadOK);
+        if (!cands.length) cands = [plateFallback(slot, pr)];
         // of a few random options, take the one that can hit this person's macros best
         if (pr.targets) {
           const t = { p: pr.targets.protein * share, c: pr.targets.carbs * share, f: pr.targets.fat * share };
@@ -629,9 +633,14 @@ function dayPortions(day, targets, pr) {
   tot.cal = tot.p * 4 + tot.c * 4 + tot.f * 9;
   return { meals, total: tot };
 }
-function swapOptions(day, idx, pr) {
+function swapOptions(day, idx, pr, noAhead) {
   const slot = day[idx].slot, inDay = new Set(day.map(x => x.id));
-  return MEALS.filter(m => m.slot === slot && mealOK(m, pr) && !inDay.has(m.id)).map(m => m.id);
+  return MEALS.filter(m => m.slot === slot && mealOK(m, pr) && !inDay.has(m.id) && !(noAhead && m.ahead)).map(m => m.id);
+}
+/* make-ahead meals in a day, so the day before can say "prep this tonight" */
+function aheadMeals(day, pr) {
+  return (day || []).map(sl => ({ sl, m: getMeal(sl.id, pr) })).filter(x => x.m && x.m.ahead)
+    .map(x => { const fm = withFlavor(x.m, x.sl, pr); return { label: x.sl.label, name: fm.name, when: x.m.ahead }; });
 }
 /* pick a flavor for a swapped-in meal, or move to the next flavor of the same meal */
 function firstFlavor(id, pr, seed) { const m = getMeal(id, pr), fls = m ? flavorsFor(m, pr) : []; return fls.length ? fls[(seed || 0) % fls.length] : ""; }
@@ -749,5 +758,5 @@ function prepList(week, targetsFor, pr) {
   });
 }
 
-root.AdonisMeals = { ING, MEALS, BY_ID, SAUCES, BLENDS, PROFILES, planWeek, dayPortions, scaleMeal, swapOptions, getMeal, amount, amountLine, groceries, prepList, mealOK, flavorsFor, firstFlavor, nextFlavor };
+root.AdonisMeals = { ING, MEALS, BY_ID, SAUCES, BLENDS, PROFILES, planWeek, dayPortions, scaleMeal, swapOptions, aheadMeals, getMeal, amount, amountLine, groceries, prepList, mealOK, flavorsFor, firstFlavor, nextFlavor };
 })(typeof window !== "undefined" ? window : globalThis);
