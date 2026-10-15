@@ -211,6 +211,26 @@ details.notes ul{margin:6px 0 0;padding-left:18px}
 .fsearch input{flex:1;min-width:0;padding:13px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:17px}
 .fsearch .linkbtn{padding:0 18px;font-size:16px}
 .fres{padding:4px 14px;margin-bottom:12px}
+.left{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;margin:0 0 10px;font-size:14px;color:var(--muted)}
+.left b{color:var(--ink);font-variant-numeric:tabular-nums}
+.left .lp b{color:var(--protein)} .left .lc b{color:var(--carbs)} .left .lf b{color:var(--fat)}
+.left .ok{color:var(--cal)} .left.done{color:var(--cal);font-weight:600}
+.qa .qah{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+.qa .qah b{font:700 20px/1.1 var(--display)}
+.qa #fcal{font:700 20px/1 var(--display);font-variant-numeric:tabular-nums;color:var(--muted)}
+.qarow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.qm{display:flex;flex-direction:column;background:var(--field);border:1px solid var(--line);border-top:3px solid var(--qc,var(--line));border-radius:10px;padding:8px 10px 6px;position:relative;cursor:text}
+.qm span{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.qm input{border:0;background:none;padding:2px 18px 0 0;font:700 26px/1.1 var(--display);width:100%;min-width:0;color:var(--ink)}
+.qm input:focus{outline:none}
+.qm input::placeholder{color:var(--muted);opacity:.4}
+.qm:focus-within{border-color:var(--qc);box-shadow:0 0 0 2px color-mix(in srgb,var(--qc) 25%,transparent)}
+.qm i{position:absolute;right:10px;bottom:9px;font-style:normal;color:var(--muted);font-size:14px}
+.qp{--qc:var(--protein)} .qc{--qc:var(--carbs)} .qf{--qc:var(--fat)}
+.qa .row2{display:flex;gap:8px}
+.qa .row2 input{flex:1;min-width:0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--field);font-size:16px}
+.qa .row2 .primary{width:auto;margin:0;padding:0 22px}
+.frow .plus{width:32px;height:32px;border-radius:50%;background:var(--field);border:1px solid var(--line);display:grid;place-items:center;font-size:20px;line-height:1;color:var(--ink);flex:none}
 .fres button{display:flex;width:100%;text-align:left;gap:10px;align-items:center;padding:11px 0;border:0;border-top:1px solid var(--line);background:none;cursor:pointer}
 .fres button:first-child{border-top:0}
 .fres .nm2{flex:1;min-width:0}
@@ -230,7 +250,9 @@ details.cue ul{margin:6px 0 0;padding-left:18px;color:var(--ink)}
 #rest .rbar{height:4px;border-radius:2px;background:rgba(255,255,255,.2);margin-top:8px;overflow:hidden}
 #rest .rbar i{display:block;height:100%;background:var(--cal)}
 #rest.go{background:var(--cal);color:#fff}
-#toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:70;background:var(--fat);color:#18202C;font-weight:700;border-radius:24px;padding:10px 16px;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:92vw;text-align:center}
+#toast.win{background:var(--cal);color:#fff;font-size:17px;padding:12px 18px}
+#confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:69}
+#toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:70;background:var(--fat);color:#18202C;font-weight:700;border-radius:24px;padding:10px 16px;box-shadow:0 6px 20px rgba(0,0,0,.25);width:max-content;max-width:min(92vw,420px);text-align:center}
 .set .done{font-weight:700}
 
 .recap{background:var(--ink);color:var(--bg);border-radius:12px;padding:14px 16px;margin:14px 0 6px}
@@ -457,6 +479,7 @@ function loadLocal(){try{const r=localStorage.getItem("adonis-v1");if(r){const o
 function setStatus(t){$("#status").textContent=t}
 const timers = {};
 function saveDay(d){
+  try{ checkMacroWins(d); }catch(e){}
   clearTimeout(timers[d]);
   timers[d] = setTimeout(()=>{cacheLocal();setStatus("Saved")},300);
 }
@@ -580,7 +603,7 @@ document.addEventListener("click", e=>{
   c.done = !c.done;
   if(c.done && !c.min && t.dataset.def) c.min = t.dataset.def;
   if(c.done){ const m = cardioMeta(cur, t.dataset.cdone, {}); c.type = m.type; if(m.mod) c.mod = m.mod; if(m.unit) c.unit = m.unit; if(m.fmt) c.fmt = m.fmt; if(m.score) c.st = m.score; }
-  if(c.done) showToast(/^\d+:Conditioning/.test(t.dataset.cdone) ? "Circuit done. Nice work." : "Session logged. Nice work.");
+  if(c.done) celebrate(/^\d+:Conditioning/.test(t.dataset.cdone) ? "Circuit done. Nice work." : "Session logged. Nice work.", false);
   saveDay(cur); render();
 });
 
@@ -820,19 +843,46 @@ function renderEat(){
     <h2>Add food</h2>
     <div class="fsearch"><input id="fq" type="search" placeholder="Search foods: eggs, rice, Big Mac…" autocomplete="off" aria-label="Search foods"><button class="linkbtn go" data-act="scan" aria-label="Scan a barcode">Scan</button></div>
     <div id="fres" class="card fres" hidden></div>
-    <p class="tip" style="margin:-2px 0 10px">Or enter it yourself:</p>
-    <div class="card">
-      <div class="row">
-        <div class="field wide"><label for="fn">Name</label><input id="fn" placeholder="e.g. Chicken and rice"></div>
-        <div class="field"><label for="fp">Protein g</label><input id="fp" inputmode="decimal"></div>
-        <div class="field"><label for="fc">Carbs g</label><input id="fc" inputmode="decimal"></div>
-        <div class="field"><label for="ff">Fat g</label><input id="ff" inputmode="decimal"></div>
-        <div class="field"><label>Calories</label><input id="fcal" disabled value="0"></div>
+    ${leftLine(t, T)}
+    <div class="card qa">
+      <div class="qah"><b>Quick add</b><span id="fcal" aria-live="polite">0 cal</span></div>
+      <p class="tip" style="margin:0 0 10px">Know the macros? Type them in. The name is optional.</p>
+      <div class="qarow">
+        <label class="qm qp"><span>Protein</span><input id="fp" inputmode="decimal" placeholder="0" aria-label="Protein grams"><i>g</i></label>
+        <label class="qm qc"><span>Carbs</span><input id="fc" inputmode="decimal" placeholder="0" aria-label="Carb grams"><i>g</i></label>
+        <label class="qm qf"><span>Fat</span><input id="ff" inputmode="decimal" placeholder="0" aria-label="Fat grams"><i>g</i></label>
       </div>
-      <button class="primary" id="addfood">Add food</button>
+      <div class="row2"><input id="fn" placeholder="Name, e.g. Chicken and rice" aria-label="Food name (optional)"><button class="primary" id="addfood">Add</button></div>
     </div>
-    ${recent.length?`<h2>Add again</h2><p class="sub">Tap to log a food you've had before.</p>
-      <div class="chips">${recent.map((f,i)=>`<button class="chip" data-re="${i}">${esc(f.name)}</button>`).join("")}</div>`:""}`;
+    ${yourFoodsHTML()}`;
+}
+/* how much is left today, so the add-food area always says what to aim for */
+function leftLine(t, T){
+  if(!T || !T.protein) return "";
+  const lp = Math.round(T.protein - t.p), lc = Math.round(T.carbs - t.c), lf = Math.round(T.fat - t.f);
+  if(lp <= 0 && lc <= 0 && lf <= 0) return `<p class="left done">You've hit all your targets for ${cur===todayStr()?"today":"this day"}.</p>`;
+  const bit = (n, lbl, cls) => n > 0 ? `<span class="${cls}"><b>${n} g</b> ${lbl}</span>` : `<span class="${cls} ok">${lbl} ✓</span>`;
+  return `<p class="left"><span class="lt">Still to go:</span> ${bit(lp,"protein","lp")} ${bit(lc,"carbs","lc")} ${bit(lf,"fat","lf")}</p>`;
+}
+/* most-logged foods (last 30 days), then most recent, as tap-to-log rows */
+let FAVS = [], POPS = [];
+function favFoods(){
+  const since = addDays(todayStr(), -30), m = new Map();
+  Object.keys(S.days).sort().reverse().forEach(k=>(S.days[k].food||[]).forEach(f=>{
+    const key = (f.name||"").trim().toLowerCase(); if(!key || f.meal) return;
+    const e = m.get(key) || {f, n:0, last:k}; if(k >= since) e.n++; m.set(key, e);
+  }));
+  return [...m.values()].sort((a,b)=>b.n-a.n || b.last.localeCompare(a.last)).slice(0,8).map(e=>e.f);
+}
+function yourFoodsHTML(){
+  FAVS = favFoods();
+  const row = (f, attr, sub) => `<button type="button" class="frow" ${attr}><span class="nm2"><b>${esc(f.name)}</b><span>${sub}</span></span><span class="plus" aria-hidden="true">+</span></button>`;
+  if(FAVS.length) return `<h2>Your foods</h2><p class="sub">Tap to log it again. Most-eaten first.</p>
+    <div class="card fres">${FAVS.map((f,i)=>row(f, `data-re="${i}" aria-label="Log ${esc(f.name)} again"`, `${Math.round(foodCal(f))} cal · P ${num(f.p)} · C ${num(f.c)} · F ${num(f.f)}`)).join("")}</div>`;
+  const want = ["Chicken breast, cooked","Egg, large","Greek yogurt, plain nonfat","White rice, cooked","Banana","Whey protein powder","Oatmeal, cooked with water","Peanut butter"];
+  POPS = want.map(n=>FD.FOODS.find(f=>f.name===n)).filter(Boolean);
+  return POPS.length ? `<h2>Popular picks</h2><p class="sub">Common foods to get you started. Foods you log show up here.</p>
+    <div class="card fres">${POPS.map((f,i)=>row(f, `data-pop="${i}"`, `${esc(f.serving)} · ${Math.round(FD.kcal(f))} cal · P ${f.p} · C ${f.c} · F ${f.f}`)).join("")}</div>` : "";
 }
 function whyBlock(r){
   const rows = [
@@ -1222,7 +1272,7 @@ function render(){
 }
 function updateFoodCal(){
   const c = Math.round(num($("#fp")?.value)*4 + num($("#fc")?.value)*4 + num($("#ff")?.value)*9);
-  if($("#fcal")) $("#fcal").value = c;
+  if($("#fcal")) $("#fcal").textContent = `${c} cal`;
 }
 document.addEventListener("click", e=>{
   const t = e.target.closest("button"); if(!t) return;
@@ -1242,7 +1292,7 @@ document.addEventListener("click", e=>{
       // personal record? (needs a previous best to beat)
       const prev = bestE1(name, cur), today = Math.max(0, ...D.lifts[name].filter(x=>x!==s).map(x=>CO.e1rm(num(x.w), num(x.r))));
       const mine = CO.e1rm(num(s.w), num(s.r));
-      if(!isPregnant() && prev > 0 && mine > prev && mine > today){ D.lifts[name].forEach(x=>delete x.pr); s.pr = true; showToast(`New record: ${name}, ${s.w} lb × ${s.r}`); }
+      if(!isPregnant() && prev > 0 && mine > prev && mine > today){ D.lifts[name].forEach(x=>delete x.pr); s.pr = true; celebrate(`New record: ${name}, ${s.w} lb × ${s.r}`, true); }
       const lib = E && E.BY_NAME[name];
       if(!(lib && lib.p==="pfwarm")) startRest(CO.restFor(name, S.plan && S.plan.answers ? S.plan.answers.goal : "muscle", S.plan ? S.plan.mode : "normal"));
     } else { delete s.pr; }
@@ -1257,13 +1307,18 @@ document.addEventListener("click", e=>{
   if(t.id==="build"){openBuilder();return}
   if(t.id==="export"){exportData();return}
   if(t.id==="import"){$("#importfile").click();return}
-  if(t.id==="complete"){D.complete=!D.complete;saveDay(cur);render();return}
+  if(t.id==="complete"){D.complete=!D.complete;saveDay(cur);render();
+    if(D.complete && cur===todayStr() && firstTime(cur,"workout")){ const st = weekStats(weekStartOf(cur)); celebrate(`Workout done. That's ${st.done}${st.planned?` of ${st.planned}`:""} this week.`, true); }
+    return}
   if(t.id==="addfood"){
     const f = {name:$("#fn").value.trim()||"Food", p:num($("#fp").value), c:num($("#fc").value), f:num($("#ff").value)};
     if(!f.p && !f.c && !f.f){$("#fp").focus();setStatus("Enter protein, carbs or fat to add a food.");return}
-    D.food.push(f); saveDay(cur); render(); return;
+    if(f.name==="Food") f.name = "Quick add";
+    D.food.push(f); saveDay(cur); render(); setStatus(`Added ${f.name}`); return;
   }
-  if(t.dataset.re){const f=recentFoods()[+t.dataset.re];D.food.push({name:f.name,p:f.p,c:f.c,f:f.f,...(f.k?{k:f.k}:{})});saveDay(cur);render();return}
+  if(t.dataset.re){const f=FAVS[+t.dataset.re]; if(!f) return; D.food.push({name:f.name,p:f.p,c:f.c,f:f.f,...(f.k?{k:f.k}:{})});saveDay(cur);render();setStatus(`Added ${f.name}`);return}
+  if(t.dataset.pop){const f=POPS[+t.dataset.pop]; if(!f) return;
+    FOODCTX = {code:"", qty:1, food:{found:true, name:f.name, brand:"", label:f.serving, per:{p:f.p, c:f.c, f:f.f}, k:f.k||0, src:"db"}}; openSheet("Add food", foodHTML()); return}
   if(t.dataset.del){D.food.splice(+t.dataset.del,1);saveDay(cur);render();return}
 });
 document.addEventListener("input", e=>{
@@ -1277,7 +1332,7 @@ document.addEventListener("input", e=>{
   if(el.id==="g-date"){S.settings.goalDate=el.value;saveSettings();return}
   if(el.id==="t-start" && el.value){S.settings.start=el.value;saveSettings();renderHeader();return}
 });
-document.addEventListener("change", e=>{ if(e.target.id==="importfile"){const f=e.target.files[0];e.target.value="";if(f)importData(f);return} if(e.target.id==="bw"||e.target.id==="bbf") render(); });
+document.addEventListener("change", e=>{ if(e.target.id==="importfile"){const f=e.target.files[0];e.target.value="";if(f)importData(f);return} const bk = {bw:"weight", bbf:"bf", bwaist:"waist"}[e.target.id]; if(bk){ try{ checkBodyWins(cur, bk); }catch(err){} saveDay(cur); if(bk!=="waist") render(); } });
 
 /* ---------- question flows (training plan, nutrition, cut) ---------- */
 const TQ = [
@@ -1825,7 +1880,75 @@ $("#rest").addEventListener("click", e=>{
   else { REST = null; drawRest(); }
 });
 let toastT = null;
-function showToast(msg){ const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(()=>t.hidden = true, 3200); }
+function showToast(msg, win){ const t = $("#toast"); t.textContent = msg; t.classList.toggle("win", !!win); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(()=>t.hidden = true, win ? 4200 : 3200); }
+
+/* ---------- celebrations: a banner every time, confetti for the wins that matter ---------- */
+const REDUCED = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : {matches:false};
+function confetti(){
+  if(REDUCED.matches) return;
+  document.getElementById("confetti")?.remove();
+  const cv = document.createElement("canvas"); cv.id = "confetti"; cv.setAttribute("aria-hidden","true"); document.body.appendChild(cv);
+  const dpr = Math.min(2, window.devicePixelRatio||1), W = innerWidth, H = innerHeight;
+  cv.width = W*dpr; cv.height = H*dpr; const g = cv.getContext("2d"); g.scale(dpr,dpr);
+  const css = getComputedStyle(document.documentElement), cols = ["--protein","--carbs","--fat","--cal"].map(v=>css.getPropertyValue(v).trim()||"#C23B2E");
+  const P = [];
+  [[0.12,1],[0.88,-1]].forEach(([x,dir])=>{ for(let i=0;i<70;i++){ const a = (-90 + dir*(15+Math.random()*40))*Math.PI/180, v = 9+Math.random()*9;
+    P.push({x:W*x, y:H*0.75, vx:Math.cos(a)*v, vy:Math.sin(a)*v, w:6+Math.random()*6, h:4+Math.random()*4, r:Math.random()*6, vr:(Math.random()-.5)*.4, c:cols[i%cols.length], wob:Math.random()*6}); } });
+  let t0 = null;
+  const step = ts => {
+    if(!t0) t0 = ts; const el = ts - t0;
+    g.clearRect(0,0,W,H);
+    P.forEach(p=>{ p.vy += 0.32; p.vx *= 0.985; p.vy *= 0.985; p.x += p.vx + Math.sin(p.wob += .15)*0.6; p.y += p.vy; p.r += p.vr;
+      g.save(); g.translate(p.x,p.y); g.rotate(p.r); g.globalAlpha = Math.max(0, 1 - Math.max(0, el-1800)/700); g.fillStyle = p.c; g.fillRect(-p.w/2,-p.h/2,p.w,p.h*Math.abs(Math.cos(p.wob))); g.restore(); });
+    if(el < 2500) requestAnimationFrame(step); else cv.remove();
+  };
+  requestAnimationFrame(step);
+}
+function celebrate(msg, big){
+  showToast(msg, true);
+  if(big) confetti();
+  try{ navigator.vibrate && navigator.vibrate(big ? [30,50,80] : 20); }catch(e){}
+}
+// each win celebrates once per day, even if you edit and re-save
+function firstTime(d, key){ const D = day(d); D.cele = D.cele || {}; if(D.cele[key]) return false; D.cele[key] = 1; return true; }
+function checkMacroWins(d){
+  if(d !== todayStr() || !S.nutri) return;
+  const D = S.days[d]; if(!D || !D.food || !D.food.length) return;
+  const T = targetsOn(d), t = totals(D); if(!T.protein) return;
+  const near = (x, y) => y > 0 && x >= 0.9*y && x <= 1.1*y;
+  const protein = t.p >= 0.9*T.protein, all = protein && near(t.c, T.carbs) && near(t.f, T.fat) && near(t.cal, T.cal);
+  if(all && firstTime(d, "all")){ firstTime(d, "p"); celebrate("Every macro on target today. Dialed in.", true); return; }
+  if(protein && firstTime(d, "p")) celebrate(t.p >= T.protein ? `Protein goal hit: ${Math.round(t.p)} g of ${T.protein} g.` : `Protein goal hit: ${Math.round(t.p)} g, within 10% of ${T.protein} g.`, true);
+}
+const BODYSEEN = {};
+function checkBodyWins(d, what){
+  if(d !== todayStr()) return;
+  const val = String((S.days[d]||{})[what==="weight"?"weight":what] ?? "");
+  if(BODYSEEN[d+what] === val) return;   // same value saved twice (blur + change): one banner only
+  BODYSEEN[d+what] = val;
+  const D = S.days[d], r = nutriNow(d), goal = r ? r.goal : "", preg = isPregnant();
+  if(what === "weight"){
+    const w = num(D.weight); if(!(w > 50)) return;
+    const ws = weights(), n = ws.length, a = avg7(ws, d);
+    const count = {1:"First weigh-in logged. The trend starts now.", 7:"7 weigh-ins logged. Your trend line is real now.", 14:"14 weigh-ins. Two weeks of data.", 30:"30 weigh-ins logged. That's consistency.", 50:"50 weigh-ins. Locked in.", 100:"100 weigh-ins. Elite consistency."}[n];
+    if(count && firstTime(d, "wcount")) return celebrate(count, true);
+    // a new best 7-day average in the direction of the goal (needs two weeks of data so one good morning can't fake it)
+    if(!preg && n >= 14 && a != null && (goal === "cut" || goal === "bulk")){
+      const prev = ws.filter(x=>x.d < d && diff(x.d, ws[0].d) >= 6).map(x=>avg7(ws, x.d));
+      const best = goal === "cut" ? Math.min(...prev) : Math.max(...prev);
+      if(prev.length && (goal === "cut" ? a < best - 0.05 : a > best + 0.05) && firstTime(d, "wbest"))
+        return celebrate(`New ${goal === "cut" ? "low" : "high"} on your 7-day average: ${a.toFixed(1)} lb.`, true);
+    }
+    showToast(`Weigh-in saved.${a != null ? ` 7-day average: ${a.toFixed(1)} lb.` : ""}`, true);
+  }
+  if(what === "bf" || what === "waist"){
+    const k = what === "bf" ? "bf" : "waist", v = num(D[k]); if(!(v > 0)) return;
+    const prev = Object.keys(S.days).filter(x=>x < d && num(S.days[x][k]) > 0).map(x=>num(S.days[x][k]));
+    if(!preg && prev.length && v < Math.min(...prev) && firstTime(d, k+"low"))
+      return celebrate(what === "bf" ? `New low body fat: ${v}%.` : `New smallest waist: ${v} in.`, true);
+    showToast(what === "bf" ? `Body fat saved: ${v}%.` : `Waist saved: ${v} in.`, true);
+  }
+}
 
 /* ---------- account menu: reset plans, send feedback ---------- */
 const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
