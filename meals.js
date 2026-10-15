@@ -447,7 +447,9 @@ function fitItems(items, target, slot) {
   }
 }
 function scaleMeal(m, target) {
-  let items = m.items.map(i => ({ ...i }));
+  // sauces are a fixed spoonful sized for a ~550-calorie plate; smaller plates get a smaller spoonful (down to half)
+  const tCal = target.p * 4 + target.c * 4 + target.f * 9, sf = Math.max(0.5, Math.min(1, tCal / 550));
+  let items = m.items.map(i => (i.sauce ? { ...i, g: Math.max(10, Math.round(i.g * sf / 5) * 5) } : { ...i }));
   let out = fitItems(items, target, m.slot);
   // still well short after the caps? add a simple side
   if (m.sides) {
@@ -534,7 +536,7 @@ function plateFallback(slot, pr) {
   const b = blockedTags(pr);
   const ok = id => !ING[id].tags.some(t => b.has(t));
   const pick = arr => arr.find(ok);
-  const p = pick(["chicken", "turkey93", "salmon", "cod", "egg", "greek", "tofu", "tempeh", "lentils", "pea"]);
+  const p = pick(pr.pregnant || pr.breastfeeding ? ["chicken", "turkey93", "egg", "greek", "tofu", "tempeh", "lentils", "salmon", "cod", "pea"] : ["chicken", "turkey93", "salmon", "cod", "egg", "greek", "tofu", "tempeh", "lentils", "pea"]);
   const c = pick(slot === "b" ? ["oats", "potato", "banana", "rice"] : ["rice", "potato", "quinoa", "sweetpot"]);
   const f = pick(["oil", "avocado", "chia"]);
   const items = [[p, 150, "p"], [c, 150, "c"], ["broccoli", 120, "x"], [f, 8, "f"]].filter(x => x[0]);
@@ -556,10 +558,14 @@ function planWeek(pr, start) {
     return c;
   };
   const shuffle = a => { const r = a.slice(); for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
+  // FDA/EPA fish advice for pregnancy and breastfeeding: 2-3 servings a week of low-mercury fish, tuna at most 2 of them
   const limitTuna = pr.pregnant || pr.breastfeeding;
-  let tunaUsed = 0;
-  const tunaOK = id => { const m = BY_ID[id]; if (!m || !limitTuna) return true; return !m.items.some(i => i.ing === "tuna") || tunaUsed < 2; };
-  const noteTuna = id => { const m = BY_ID[id]; if (m && m.items.some(i => i.ing === "tuna")) tunaUsed++; };
+  const SEA = ["salmon", "cod", "shrimp", "tuna"];
+  const isSea = m => m && m.items.some(i => SEA.includes(i.ing));
+  let tunaUsed = 0, seaUsed = 0;
+  const tunaOK = id => { const m = BY_ID[id]; if (!m || !limitTuna) return true;
+    return (!m.items.some(i => i.ing === "tuna") || tunaUsed < 2) && (!isSea(m) || seaUsed < 3); };
+  const noteTuna = id => { const m = BY_ID[id]; if (m && m.items.some(i => i.ing === "tuna")) tunaUsed++; if (isSea(m)) seaUsed++; };
   const pickFl = (m, avoid) => {
     const fls = flavorsFor(m, pr); if (!fls.length) return "";
     const fresh = fls.filter(f => !avoid.has(f));
@@ -572,6 +578,8 @@ function planWeek(pr, start) {
   let batchMains = null;
   if (pr.cooking === "batch") {
     let mains = pool("m"); const bm = mains.filter(m => m.batch); if (bm.length >= 2) mains = bm;
+    // a batch main is eaten 3-4 times, which alone would pass the weekly fish limit in pregnancy
+    if (limitTuna) { const land = mains.filter(m => !isSea(m)); if (land.length >= 2) mains = land; }
     const sh = shuffle(mains);
     batchMains = [[sh[0], sh[1 % sh.length]], [sh[2 % sh.length], sh[3 % sh.length]]].map(pair => {
       const used = new Set();
@@ -594,7 +602,7 @@ function planWeek(pr, start) {
         const aheadOK = m => d > 0 || !m.ahead;
         let cands = opts.filter(m => !used.has(m.id) && !recent.slice(-2).some(r => r.has(m.id)) && tunaOK(m.id) && aheadOK(m));
         if (!cands.length) cands = opts.filter(m => !used.has(m.id) && tunaOK(m.id) && aheadOK(m));
-        if (!cands.length) cands = opts.filter(aheadOK);
+        if (!cands.length) cands = opts.filter(m => tunaOK(m.id) && aheadOK(m));   // a repeat beats breaking the fish limit
         if (!cands.length) cands = [plateFallback(slot, pr)];
         // of a few random options, take the one that can hit this person's macros best
         if (pr.targets) {

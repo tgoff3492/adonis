@@ -200,7 +200,7 @@ const SPLITS = {
   4: { label: "Upper / lower, 4 days", on: [1, 2, 4, 5], days: [
     D("Upper A", "upper", ["h_push", "h_pull", "v_push", "v_pull", "chest_iso", "lat_raise", "triceps", "biceps", "core"]),
     D("Lower A", "lower", ["squat", "hinge", "lunge", "quad_iso", "ham_iso", "calves", "core"]),
-    D("Upper B", "upper", ["incline_push", "h_pull", "v_pull", "chest_iso", "lat_raise", "rear_delt", "biceps", "triceps", "core"]),
+    D("Upper B", "upper", ["incline_push", "h_pull", "v_pull", "chest_iso", "biceps", "triceps", "lat_raise", "rear_delt", "core"]),
     D("Lower B", "lower", ["hinge", "squat", "glute", "lunge", "ham_iso", "core", "calves"])]},
   5: { label: "Upper / lower + push / pull / legs, 5 days", on: [1, 2, 4, 5, 6], days: [
     D("Upper", "upper", ["h_push", "h_pull", "v_push", "v_pull", "lat_raise", "biceps", "triceps", "core"]),
@@ -240,19 +240,22 @@ const REPS = {
   fatloss:  { c: ["12", "12", "10", "15"], a: ["15", "15", "12", "15"] },
   general:  { c: ["8-10", "8-10", "8", "10-12"], a: ["12", "12", "10", "15"] },
 };
+// effort cues follow the proximity-to-failure research: growth comes from sets ending within ~0-3 reps of failure (Robinson et al., 2024)
 const WEEK_NOTES = [
   "Moderate weight. Finish each set with 2-3 good reps left in the tank.",
-  "Go a little heavier than week 1.",
-  "Heaviest week. Push hard with good form.",
+  "Go a little heavier than week 1. Stop each set with about 2 good reps left in the tank.",
+  "Heaviest week. Push hard with good form: 1-2 reps left in the tank on every set.",
   "Lighter week. Drop the weight about 10% and focus on clean reps."
 ];
 const PREG_WEEK_NOTES = [
   "Moderate weight. Keep breathing through every rep and stop with 2-3 reps in the tank.",
-  "Go a little heavier if it feels good. Never hold your breath to grind out a rep.",
+  "Go a little heavier if it feels good, still stopping with 2-3 reps in the tank. Never hold your breath to grind out a rep.",
   "Hardest week. Push, but always keep 2 reps in the tank. Tap Easier any time.",
   "Lighter week. Drop the weight about 10% and move well."
 ];
 
+// ACOG Committee Opinion 804 (2020): about 150 minutes a week of moderate aerobic activity in pregnancy and after birth
+const AEROBIC_NOTE = "Aim for about 150 minutes a week of moderate cardio, like brisk walking, swimming or cycling. Your active recovery days are a good place for it. Moderate means you can talk but not sing.";
 const PREG_WARNING = "Stop and call your OB or midwife if you notice vaginal bleeding, regular painful contractions, fluid leaking, dizziness or feeling faint, a headache, chest pain, muscle weakness that affects your balance, calf pain or swelling, or shortness of breath before you start.";
 
 /* Trimester the plan must be safe for: the one reached by the END of the 4-week block,
@@ -347,7 +350,8 @@ function pickFor(pattern, ctx, used, dayUsed, tried) {
 function prescribe(x, ctx, goal, idx) {
   let sets = (x.c ? SETS : ISO_SETS)[ctx.intensity] || SETS[2];
   // advanced, 3 days or fewer: each session carries more of the week, so main lifts get an extra set
-  if (x.c && ctx.intensity >= 3 && ctx.fewDays) sets = sets.map(v => Math.min(5, v + 1));
+  // intermediates get it too, so 3-day plans reach ~10+ weekly sets per muscle (Schoenfeld, Ogborn & Krieger, 2017)
+  if (x.c && ctx.fewDays && (ctx.intensity >= 3 || (ctx.intensity >= 2 && ctx.mode === "normal"))) sets = sets.map(v => Math.min(5, v + 1));
   if (x.p === "cond") return sets.map(s => ({ s: Math.max(3, s + 1), r: "30s on, 30s off" }));
   if (x.p === "core") return sets.map(() => ({ s: 3, r: ["Plank"].includes(x.n) ? "30s" : ["Side Plank", "Suitcase Carry"].includes(x.n) ? "30s/side" : "10/side" }));
   if (x.p === "calves") return sets.map(s => ({ s, r: "15" }));
@@ -483,8 +487,17 @@ function generate(a) {
     }
     // keep the session inside the time they picked (estimate: ~40 s per set plus rest, plus a warm-up)
     const restOf = it => { const x = BY_NAME[it.n]; const big = x && x.c && x.d >= 3; return goal === "strength" ? (big ? 180 : 90) : goal === "fatloss" ? (big ? 90 : 60) : (big ? 120 : 75); };
-    const est = () => 8 + items.reduce((a, it) => a + it.wk[0].s * (40 + restOf(it)) / 60, 0);
-    while (items.length > 4 && est() > (+a.time || 45) + 3) { const k = items.length - 1 - (items[items.length - 1].note.startsWith("Finisher") ? 1 : 0); items.splice(k, 1); }
+    // estimate with the hardest week's sets (weeks 2-3 add sets), not week 1
+    const peak = it => Math.max(...it.wk.slice(0, 3).map(w => w.s || 0));
+    const est = () => 8 + items.reduce((a, it) => a + peak(it) * (40 + restOf(it)) / 60, 0);
+    const limit = (+a.time || 45) + 5;
+    while (items.length > 4 && est() > limit) { const k = items.length - 1 - (items[items.length - 1].note.startsWith("Finisher") ? 1 : 0); items.splice(k, 1); }
+    // still long (short sessions with big sets): take a set off the biggest lifts, never below 2
+    for (let guard = 0; guard < 30 && est() > limit; guard++) {
+      const big = items.filter(it => peak(it) > 2 && !it.note.startsWith("Finisher")).sort((x, y) => peak(y) - peak(x))[0];
+      if (!big) break;
+      const top = peak(big); big.wk.forEach(w => { if (w.s >= top) w.s = top - 1; });
+    }
     if (ctx.pf) items.unshift({ n: "Pelvic Floor Warm-Up", bw: true, wk: prescribe(BY_NAME["Pelvic Floor Warm-Up"], ctx), note: PF_NOTES["Pelvic Floor Warm-Up"] });
     return { name: t.name, type: t.type, ex: items };
   });
@@ -501,12 +514,14 @@ function generate(a) {
     notes.push("Confirm this plan with your OB or midwife before you start.");
     if (goal === "fatloss") notes.push("Pregnancy isn't the time to cut, so this plan is set for strength and fitness instead of fat loss.");
     notes.push("No crunches, planks, jumping, slams or max-effort lifts." + (trimesterFor(a) >= 2 ? " Nothing lying flat on your back or belly." : ""));
+    notes.push(AEROBIC_NOTE);
   }
   if (ctx.mode === "postpartum") {
     notes.push("Make sure you've been cleared for exercise at your postpartum checkup.");
     if (a.since === "6w") notes.push("Rebuild phase: lighter loads, no planks, crunches or jumping yet. Leaking, heaviness or pain means ease off and see a pelvic floor physical therapist.");
     if (a.since === "3m") notes.push("Building phase: no crunches or jumping yet. Leaking, heaviness or pain means ease off and see a pelvic floor physical therapist.");
     if (a.since === "6m") notes.push("Impact work is back in, as long as you have no leaking, heaviness or pain.");
+    notes.push(AEROBIC_NOTE);
   }
   if (ctx.block.has("lowback") || ctx.block.has("knee") || ctx.block.has("shoulder") || ctx.block.has("wrist"))
     notes.push("Exercises that load the areas you flagged were left out. If something still hurts, tap Easier or skip it. This plan isn't medical advice.");

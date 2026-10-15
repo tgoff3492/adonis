@@ -103,7 +103,10 @@ function compute(p, o) {
 
   let delta = 0;
   if (goal === "cut") delta = -(weight * (CUT[pace] || CUT.steady)) * 500;
-  if (goal === "bulk") delta = (weight * (BULK[pace] || BULK.slow)) * 500;
+  // bulk: 0.25-0.5% of body weight a week, from a surplus no bigger than ~20% of maintenance (Iraki et al., 2019)
+  if (goal === "bulk") delta = Math.min((weight * (BULK[pace] || BULK.slow)) * 500, tdee * 0.2);
+  if (goal === "bulk" && ((bf != null && bf > (sex === "male" ? 25 : 32)) || (bf == null && bmi >= 30)))
+    notes.push("Bulking research is done on lean lifters. At your current body fat, eating at maintenance or a small cut while you train usually builds muscle with less fat gain. You can switch your goal any time.");
 
   let cal = tdee + delta + extra + (+o.adj || 0);
 
@@ -125,22 +128,42 @@ function compute(p, o) {
   if (cal < floor) { cal = floor; if (goal === "cut") notes.push("Your cut is capped so calories never drop below what your body burns at rest."); }
   cal = round(cal, 10);
 
-  // macros
+  // macros. Research basis (see tests/research-audit.js for the checks):
+  //   protein 1.6-2.2 g/kg building or maintaining (Morton 2018, ISSN 2017, Iraki 2019);
+  //   2.3-3.1 g/kg of LEAN mass on a cut (Helms 2014); fat 20-35% of calories (IOM AMDR), 15-30% on a cut (Helms 2014);
+  //   pregnancy/breastfeeding carbs at least the RDA (175 / 210 g).
   let protein;
   const lbmLb = bf != null ? weight * (1 - bf / 100) : null;
   const highBF = bf != null && (sex === "male" ? bf > 30 : bf > 38);
+  const nursing = status === "pregnant" || status === "breastfeeding";
   if (highBF) protein = lbmLb * 1.2;
-  else protein = weight * (goal === "cut" ? 1.0 : 0.85);
+  else if (goal === "cut" && !nursing) protein = lbmLb != null ? Math.min(weight * 1.0, lbmLb * 1.3) : weight * 1.0;  // 1.3 g/lb lean ≈ 2.9 g/kg lean
+  else protein = weight * 0.85;
+  // at low calories a body-weight target can crowd out everything else: keep protein under 40% of calories on a cut
+  // (35% otherwise, the IOM range), but never below 1.6 g/kg (Morton 2018) or the lean-mass target for high body fat
+  const pFloor = highBF ? lbmLb * 1.0 : kg * 1.6;   // 1.0 g/lb lean ≈ 2.2 g/kg lean; 1.6 g/kg body weight
+  protein = Math.max(Math.min(protein, cal * (goal === "cut" ? 0.40 : 0.35) / 4), Math.min(protein, pFloor));
   protein = round(protein, 5);
   let fat = weight * (goal === "cut" ? 0.35 : 0.4);
-  const minFatPct = status === "pregnant" || status === "breastfeeding" ? 0.25 : 0.2;
-  fat = Math.max(fat, cal * minFatPct / 9);
+  fat = Math.min(fat, cal * (goal === "cut" ? 0.30 : 0.35) / 9);        // heavier people: keep fat inside the ranges
+  const minFatPct = nursing ? 0.25 : 0.2;
+  fat = Math.max(fat, cal * minFatPct / 9, kg * 0.5);
   fat = round(fat, 5);
   let carbs = (cal - protein * 4 - fat * 9) / 4;
-  if (carbs < 50) { // very small people on a cut: trim protein a little before carbs go silly
-    carbs = 50; protein = round((cal - fat * 9 - carbs * 4) / 4, 5);
+  const carbFloor = status === "pregnant" ? 175 : status === "breastfeeding" ? 210 : 50;
+  if (carbs < carbFloor) {
+    // make room for carbs: protein down toward the RDA-plus level, then fat down to its minimum
+    const pMin = round(kg * (nursing ? 1.3 : 1.6), 5);
+    const need = (carbFloor - carbs) * 4;
+    const fromP = Math.min(need, Math.max(0, (protein - pMin) * 4));
+    protein = round(protein - fromP / 4, 5);
+    const fatMin = Math.max(cal * minFatPct / 9, kg * 0.5);
+    const fromF = Math.min(need - fromP, Math.max(0, (fat - fatMin) * 9));
+    fat = round(fat - fromF / 9, 5);
+    carbs = (cal - protein * 4 - fat * 9) / 4;
+    if (carbs < carbFloor && nursing) { cal = round(cal + (carbFloor - carbs) * 4, 10); carbs = carbFloor; notes.push("Calories are set a little higher so you get enough carbs for you and your baby."); }
   }
-  carbs = round(carbs, 5);
+  carbs = round(Math.max(carbs, 0), 5);
 
   let carbsTrain = carbs, carbsRest = carbs;
   if (p.carbs === "cycle" && td > 0 && td < 7) {
