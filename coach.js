@@ -231,12 +231,18 @@ function suggest(name, sessions, rx, opts) {
     else if (bestReps >= target - 2) w = lw;               // close: same weight, beat the reps
     else w = Math.min(w, lw);                               // well short: come down a little
   } else if (careful) w = Math.min(w, lw);                  // pregnancy/postpartum: no forced jumps
-  w = Math.max(inc, Math.min(w, Math.max(lw, roundTo(lw * 1.1, inc))));  // never more than about +10%
+  // never more than about +10%, but always allow one step up (light dumbbells and cables can't move 10%)
+  w = Math.max(inc, Math.min(w, Math.max(lw + inc, roundTo(lw * 1.1, inc))));
   let text;
   const lastTxt = `Last time: ${fmtW(lw)} lb × ${lr}.`;
-  if (w > lw) text = `${lastTxt} Try ${fmtW(w)} lb today.`;
+  const bigJump = w > lw && (w - lw) / lw > 0.15;
+  const lowR = low && low < target ? low : Math.max(1, target - 2);
+  if (w > lw) text = `${lastTxt} Try ${fmtW(w)} lb today.` + (bigJump ? ` It's a big jump, so ${lowR} reps is a win. Build back up to ${target}.` : "");
   else if (w < lw) text = `${lastTxt} Try ${fmtW(w)} lb for today's ${low && low !== target ? `${low} to ${target}` : target} reps.`;
-  else text = careful ? `${lastTxt} Same weight is perfect.` : `${lastTxt} Stay at ${fmtW(w)} lb and beat your reps.`;
+  else if (careful) text = `${lastTxt} Same weight is perfect.`;
+  else if (Math.max(...weighted.map(s => num(s.r))) >= target)
+    text = `${lastTxt} You hit ${target} on your best set. Get every set to ${target} at ${fmtW(w)} lb, then it goes up.`;
+  else text = `${lastTxt} Stay at ${fmtW(w)} lb and beat your reps.`;
   if (careful && w > lw) text = `${lastTxt} Try ${fmtW(w)} lb if it feels good, or stay at ${fmtW(lw)}.`;
   return { w, r: target, text };
 }

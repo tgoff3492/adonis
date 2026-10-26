@@ -249,7 +249,9 @@ details.cue ul{margin:6px 0 0;padding-left:18px;color:var(--ink)}
 #rest button{border:1px solid rgba(255,255,255,.35);background:transparent;color:inherit;border-radius:18px;padding:8px 12px;font-weight:600;cursor:pointer}
 #rest .rbar{height:4px;border-radius:2px;background:rgba(255,255,255,.2);margin-top:8px;overflow:hidden}
 #rest .rbar i{display:block;height:100%;background:var(--cal)}
-#rest.go{background:var(--cal);color:#fff}
+#rest.go{background:var(--cal);color:#fff;animation:restgo .5s ease-in-out 4 alternate}
+@keyframes restgo{from{transform:scale(1)}to{transform:scale(1.04)}}
+@media (prefers-reduced-motion:reduce){#rest.go{animation:none}}
 #toast.win{background:var(--cal);color:#fff;font-size:17px;padding:12px 18px}
 #confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:69}
 #toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:70;background:var(--fat);color:#18202C;font-weight:700;border-radius:24px;padding:10px 16px;box-shadow:0 6px 20px rgba(0,0,0,.25);width:max-content;max-width:min(92vw,420px);text-align:center}
@@ -1848,23 +1850,39 @@ function recapCard(){
 document.addEventListener("click", e=>{ const t = e.target.closest('[data-act="recap-done"]'); if(!t) return; S.recapSeen[t.dataset.w] = true; cacheLocal(); render(); });
 
 /* ---------- rest timer + toasts ---------- */
-let REST = null, restTick = null, audioCtx = null;
-function beep(){
+let REST = null, restTick = null, audioCtx = null, wakeLock = null;
+function audio(){
   try{
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    [0, 0.25].forEach(off=>{ const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
-      const t0 = audioCtx.currentTime + off; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.3, t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0+0.18); o.start(t0); o.stop(t0+0.2); });
+    if(audioCtx.state !== "running") audioCtx.resume();   // iPhone pauses ("interrupted") after calls, other apps, or locking
   }catch(e){}
-  try{ navigator.vibrate && navigator.vibrate([200,100,200]); }catch(e){}
+  return audioCtx;
+}
+function beep(){
+  const ctx = audio();
+  try{
+    [0, 0.3, 0.6].forEach(off=>{ const o = ctx.createOscillator(), g = ctx.createGain(); o.type = "square"; o.frequency.value = 1000; o.connect(g); g.connect(ctx.destination);
+      const t0 = ctx.currentTime + off; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.5, t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0+0.22); o.start(t0); o.stop(t0+0.25); });
+  }catch(e){}
+  try{ navigator.vibrate && navigator.vibrate([200,100,200]); }catch(e){}   // Android only; iPhone browsers can't vibrate
+}
+/* keep the screen on while resting, so the phone doesn't lock and silence the timer */
+async function holdScreen(on){
+  try{
+    if(on && !wakeLock && navigator.wakeLock){ wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", ()=>{ wakeLock = null; }); }
+    if(!on && wakeLock){ const l = wakeLock; wakeLock = null; await l.release(); }
+  }catch(e){ wakeLock = null; }
 }
 function startRest(sec){
-  try{ audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state==="suspended") audioCtx.resume(); }catch(e){}  // unlock sound on this tap (iPhone)
+  const ctx = audio();   // unlock sound on this tap (iPhone): play a silent blip inside the tap
+  try{ const b = ctx.createBuffer(1, 1, 22050), src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(0); }catch(e){}
+  holdScreen(true);
   REST = {end: Date.now() + sec*1000, total: sec*1000, done:false};
   clearInterval(restTick); restTick = setInterval(drawRest, 250); drawRest();
 }
 function drawRest(){
   const el = $("#rest");
-  if(!REST){ el.hidden = true; clearInterval(restTick); document.body.classList.remove("resting"); return; }
+  if(!REST){ el.hidden = true; clearInterval(restTick); document.body.classList.remove("resting"); holdScreen(false); return; }
   const left = Math.max(0, REST.end - Date.now());
   if(left === 0 && !REST.done){ REST.done = true; beep(); setTimeout(()=>{ if(REST && REST.done){ REST = null; drawRest(); } }, 4000); }
   const mm = Math.floor(Math.ceil(left/1000)/60), ss = String(Math.ceil(left/1000)%60).padStart(2,"0");
@@ -1873,7 +1891,7 @@ function drawRest(){
     ? `<div class="rrow"><div class="rt">Go! Next set</div><button data-rest="close">Done</button></div>`
     : `<div class="rrow"><div class="rt"><small>Rest</small>${mm}:${ss}</div><button data-rest="add">+15s</button><button data-rest="skip">Skip</button></div><div class="rbar"><i style="width:${100 - left/REST.total*100}%"></i></div>`;
 }
-document.addEventListener("visibilitychange", ()=>{ if(!document.hidden && REST) drawRest(); });
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden && REST){ if(!REST.done) holdScreen(true); drawRest(); } });
 $("#rest").addEventListener("click", e=>{
   const b = e.target.closest("[data-rest]"); if(!b || !REST) return;
   if(b.dataset.rest==="add"){ REST.end += 15000; REST.total += 15000; drawRest(); }
