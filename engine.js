@@ -275,7 +275,7 @@ function trimesterFor(a) {
 /* ---------- context: what this person can and can't do ---------- */
 function context(a) {
   const ctx = { eq: new Set(), block: new Set(), maxD: 5, level: +a.experience || 1, intensity: +a.experience || 1, notes: [], mode: "normal" };
-  if (a.where === "gym") GYM.forEach(t => ctx.eq.add(t));
+  if (a.where === "gym") { GYM.forEach(t => ctx.eq.add(t)); ctx.gym = true; }
   else (a.home || []).forEach(t => {
     if (t === "db_light") ctx.eq.add("db");
     else if (t === "db_full") { ctx.eq.add("db"); ctx.eq.add("dbh"); }
@@ -322,14 +322,26 @@ function targetD(ctx, pattern) {
   return Math.min(ctx.maxD, { 1: 2, 2: 3, 3: 4 }[ctx.level] || 2);
 }
 
-function pickFor(pattern, ctx, used, dayUsed, tried) {
+/* At a gym, home-style fillers (bands, doorframes, walls) lose to the machines and free weights that are right there.
+   Bodyweight staples people actually do in a gym stay in. */
+const GYM_BW_OK = new Set(["Pull Up", "Chin Up", "Negative Chin Up", "Push Up", "Plank", "Side Plank", "Dead Bug", "Bird Dog", "Glute Bridge", "Standing Calf Raise"]);
+function homeStyle(x) {
+  if (x.p === "cond" || x.p === "pf" || x.p === "pfwarm" || GYM_BW_OK.has(x.n)) return false;
+  if (x.n === "Dumbbell Floor Press") return true;               // there's a bench right there
+  return x.eq.length === 0 || x.eq.every(t => t === "band");
+}
+/* difficulty here is mostly about skill, not load. Machines and cables take little skill but load hard,
+   so at a gym they suit every level. */
+const isMachine = x => x.eq.includes("cab") && !x.eq.includes("bb");
+
+function pickFor(pattern, ctx, used, dayUsed, tried, slot) {
   tried = tried || new Set();
   if (tried.has(pattern)) return null;
   tried.add(pattern);
   const t = targetD(ctx, pattern);
   const c = LIB.map((x, i) => [x, i]).filter(([x]) => x.p === pattern && fits(x, ctx) && !dayUsed.has(x.n) && !(pattern === "cond" && ctx.condMax && x.d > ctx.condMax));
   if (!c.length) {
-    for (const fb of FALLBACK[pattern] || []) { const r = pickFor(fb, ctx, used, dayUsed, tried); if (r) return r; }
+    for (const fb of FALLBACK[pattern] || []) { const r = pickFor(fb, ctx, used, dayUsed, tried, slot); if (r) return r; }
     return null;
   }
   c.sort((A, B) => {
@@ -337,8 +349,16 @@ function pickFor(pattern, ctx, used, dayUsed, tried) {
     // closest to the person's level, with a nudge toward variety across the week
     // equipped lifters get equipment-based accessories ahead of bodyweight fillers
     const bwPen = x => (x.eq.length === 0 && !x.c && ctx.eq.size >= 3 && pattern !== "cond" ? 0.75 : 0);
-    const sa = Math.abs(a.d - t) + (a.d > t ? 0.5 : 0) + 1.25 * (used[a.n] || 0) + bwPen(a);
-    const sb = Math.abs(b.d - t) + (b.d > t ? 0.5 : 0) + 1.25 * (used[b.n] || 0) + bwPen(b);
+    const gymAdj = x => {
+      if (!ctx.gym || ctx.mode === "recovery") return 0;
+      let v = homeStyle(x) ? 3 : 0;
+      if (isMachine(x) && x.c && ctx.level >= 2) v -= Math.min(1, Math.abs(x.d - t));   // machine compounds fit any level
+      // the day's first lift for someone past the beginner stage: a barbell main lift
+      if (slot === 0 && ctx.level >= 2 && ctx.mode === "normal" && x.eq.includes("bb") && x.c && x.d <= 4) v -= 2;
+      return v;
+    };
+    const sa = Math.abs(a.d - t) + (a.d > t ? 0.5 : 0) + 1.25 * (used[a.n] || 0) + bwPen(a) + gymAdj(a);
+    const sb = Math.abs(b.d - t) + (b.d > t ? 0.5 : 0) + 1.25 * (used[b.n] || 0) + bwPen(b) + gymAdj(b);
     if (sa !== sb) return sa - sb;
     if (a.c !== b.c) return a.c ? -1 : 1;                // prefer compound lifts
     return ia - ib;
@@ -459,7 +479,7 @@ function generate(a) {
     const want = finisher ? slots - 1 : slots;
     for (const s of t.slots) {
       if (ex.length >= want) break;
-      const x = pickFor(s, ctx, used, dayUsed);
+      const x = pickFor(s, ctx, used, dayUsed, null, ex.length);
       if (!x) continue;
       dayUsed.add(x.n); used[x.n] = (used[x.n] || 0) + 1;
       ex.push(x);
