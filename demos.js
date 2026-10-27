@@ -33,8 +33,10 @@ function sideJoints(p) {
   const head = [sh[0] + hc * Math.sin(ht), sh[1] - hc * Math.cos(ht)];
   const handOf = (abs, rel) => abs || [sh[0] + rel[0], sh[1] + rel[1]];
   const ankOf = (abs, rel) => abs || [hip[0] + rel[0], hip[1] + rel[1]];
-  const hand = handOf(p.hand, p.hr || [3, 50]);
-  const hand2f = p.hand2 ? p.hand2 : p.hr2 ? handOf(null, p.hr2) : hand;
+  const fwd = [Math.cos(t), Math.sin(t)], dn = [-Math.sin(t), Math.cos(t)];
+  const viaT = v => [sh[0] + v[0] * fwd[0] + v[1] * dn[0], sh[1] + v[0] * fwd[1] + v[1] * dn[1]];
+  const hand = p.ht ? viaT(p.ht) : handOf(p.hand, p.hr || [3, 50]);
+  const hand2f = p.hand2 ? p.hand2 : p.ht2 ? viaT(p.ht2) : p.hr2 ? handOf(null, p.hr2) : hand;
   const an = ankOf(p.an, p.ar || [2, 69]), an2 = p.an2 || (p.ar2 ? ankOf(null, p.ar2) : an);
   const arm = (h, s) => ik(sh[0], sh[1], h[0], h[1], L.ua, L.fa, s);
   const leg = (a, s) => ik(hip[0], hip[1], a[0], a[1], L.th, L.sh, s);
@@ -138,8 +140,10 @@ function loadProps(eq, at, at2) {
 const T = {};
 // squat family. arms: bw (forward), goblet, back, front
 T.squat = (o = {}) => {
-  const arms = { bw: [51, 4], goblet: [13, 24], back: [-5, 6], front: [12, 2], band: [12, 24] }[o.arms || "bw"];
-  const A = { ...STAND, hr: arms, eb: o.arms === "back" ? 1 : -1 }, B = { hip: [99, 103], t: 38, an: [122, G], hr: arms, eb: A.eb };
+  // bodyweight: arms straight out in front, level with the floor. Holds move with the torso.
+  const hold_ = { goblet: { ht: [20, 10], eb: 1 }, band: { ht: [20, 10], eb: 1 }, back: { ht: [-7, -1], eb: -1 }, front: { ht: [4, -8], eb: 1 } }[o.arms];
+  const arms = hold_ || { hr: [51, 4], eb: -1 };
+  const A = { ...STAND, ...arms }, B = { hip: [99, 103], t: 38, an: [122, G], ...arms };
   const props = [];
   if (o.arms === "goblet") props.push({ k: "db", at: "hand", v: 1, front: true });
   if (o.arms === "back") props.push({ k: "plate", at: "shb", front: false });
@@ -147,7 +151,7 @@ T.squat = (o = {}) => {
   if (o.arms === "band") props.push({ k: "band", from: [122, 140], to: "hand" });
   if (o.heel) props.push({ k: "poly", pts: [[112, G], [138, G], [112, G - 7]] });
   if (o.wall) { props.push({ k: "line", a: [80, -30], b: [80, G], w: 5 }); return { ...hold({ hip: [93, 103], t: 0, an: [126, G], hr: [8, 46] }, { hip: [93, 102] }), props }; }
-  if (o.jump) return { A: { hip: [120, 56], t: 4, an: [122, 126], ft: 35, hr: [-14, 46], eb: 1 }, B: { ...B, hr: [40, 6] }, props };
+  if (o.jump) return { A: { hip: [120, 56], t: 4, an: [122, 126], ft: 35, hr: [-16, 48], eb: 1 }, B: { ...B, hr: [-20, 44], eb: 1 }, props };
   if (o.hack) { props.push({ k: "poly", pts: [[60, G], [70, G], [136, -10], [128, -14]] }); }
   return { A, B, props };
 };
@@ -161,7 +165,7 @@ T.legpress = () => ({
 T.hinge = (o = {}) => {
   const A = { ...STAND, hr: [3, 50] }, B = { hip: [94, 78], t: 72, an: [122, G], hr: [3, 50] };
   if (o.dl) Object.assign(B, { hip: [97, 93], t: 56, hr: [2, 52] });
-  if (o.gm) { A.hr = B.hr = [-5, 6]; A.eb = B.eb = 1; }
+  if (o.gm) { A.ht = B.ht = [-7, -1]; A.eb = B.eb = -1; }
   if (o.sl) { A.an2 = [118, G]; B.an2 = [28, 72]; B.ft2 = 90; A.ft2 = 0; }
   const props = o.gm ? [{ k: "plate", at: "shb" }] : loadProps(o.eq, "hand", o.eq === "db" ? "hand2" : null);
   if (o.cable) { props.push({ k: "cable", from: [36, 132], to: "hand" }); A.hr = [-2, 50]; B.hr = [-30, 42]; }
@@ -324,8 +328,8 @@ T.ohp = (o = {}) => ({
   props: [...seatProps(o), ...(o.eq === "bb" ? [{ k: "plate", at: "hand", front: true }] : o.eq === "db" ? [{ k: "db", at: "hand", v: 1, front: true }] : o.eq === "band" ? [{ k: "band", from: [122, 140], to: "hand" }] : o.machine ? [{ k: "bar", at: "hand", w: 6 }] : [])],
 });
 T.thruster = (o = {}) => ({
-  A: { hip: [99, 103], t: 38, an: [122, G], hr: [12, -2], eb: 1 },
-  B: { ...STAND, hr: [3, -51], eb: 1 },
+  A: { hip: [99, 103], t: 38, an: [122, G], ht: [4, -8], eb: 1 },
+  B: { ...STAND, ht: [3, -51], eb: -1 },
   props: o.ball ? [{ k: "ball", at: "hand", r: 10, front: true }] : [{ k: "db", at: "hand", v: 1, front: true }],
 });
 T.pushpress = () => ({ A: { hip: [116, 78], t: 8, an: [122, G], hr: [12, -2], eb: 1 }, B: { ...STAND, hr: [3, -51], eb: 1 }, props: [{ k: "db", at: "hand", v: 1, front: true }] });
