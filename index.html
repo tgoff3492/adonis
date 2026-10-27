@@ -242,6 +242,59 @@ details.notes ul{margin:6px 0 0;padding-left:18px}
 details.cue{margin:0 0 8px 36px;font-size:14px}
 details.cue summary{cursor:pointer;color:var(--carbs);font-weight:600}
 details.cue ul{margin:6px 0 0;padding-left:18px;color:var(--ink)}
+/* ---------- workout mode ---------- */
+.primary.start{background:var(--protein);color:#fff;margin:2px 0 14px;font:800 22px var(--display);font-style:italic;letter-spacing:.03em;text-transform:uppercase;padding:16px}
+.planline{display:flex;align-items:center;gap:10px;margin:12px 0 0;font-size:14px;color:var(--muted)}
+.planline .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.planline .t b{color:var(--ink);font-weight:600}
+.linkbtn.sm{padding:5px 10px;font-size:13px}
+.set input::placeholder{color:var(--muted);opacity:.7;font-weight:400}
+.set input.pre::placeholder{color:var(--ink);opacity:.62;font-weight:600}
+.exhead .tagpill{align-self:center}
+#focus[hidden]{display:none}
+#focus{position:fixed;inset:0;z-index:25;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+#focus .fwrap{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#focus .fin{max-width:560px;margin:0 auto;padding:12px 16px 28px}
+#focus .ftop{display:flex;align-items:center;gap:12px}
+#focus .fprog{flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+#focus .fprog i{display:block;height:100%;background:var(--cal);transition:width .3s}
+#focus .fcount{font:600 15px var(--display);color:var(--muted);white-space:nowrap}
+#focus .fkick{font:700 14px var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--protein);margin:18px 0 2px}
+#focus .fname{font:800 38px/1 var(--display);font-style:italic;text-transform:uppercase;letter-spacing:.01em;margin:0 0 10px;overflow-wrap:anywhere}
+#focus .frow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#focus .fsug{margin:10px 0 0;font-size:15px;line-height:1.4}
+#focus details.cue{margin:10px 0 0}
+#focus .fhint{color:var(--protein);font-size:14px;margin:8px 0 0;min-height:0}
+#focus .fsets{margin-top:16px;display:grid;gap:8px}
+#focus .fset{display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font:600 19px var(--display);text-align:left;color:var(--ink);cursor:pointer}
+#focus .fset .k{color:var(--muted);min-width:52px}
+#focus .fset .v{flex:1;font-variant-numeric:tabular-nums}
+#focus .fset .ck{color:var(--cal);font-size:20px}
+#focus .fset.todo{color:var(--muted);background:transparent;border-style:dashed;cursor:default}
+#focus .fset.isdone{border-color:var(--cal)}
+#focus .fset.pr .ck{color:var(--fat)}
+#focus .fcur{border:2px solid var(--ink);border-radius:14px;background:var(--surface);padding:14px}
+#focus .fcur .lab{font:700 15px var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+#focus .fnum{display:grid;grid-template-columns:58px 1fr 58px;gap:8px;align-items:center;margin-top:10px}
+#focus .fnum button{height:58px;border-radius:12px;border:1px solid var(--line);background:var(--field);font:700 28px var(--display);cursor:pointer;color:var(--ink);touch-action:manipulation}
+#focus .fnum label{display:flex;align-items:center;justify-content:center;gap:6px;height:58px;border-radius:12px;border:1px solid var(--line);background:var(--field)}
+#focus .fnum input{width:4.2ch;border:0;background:transparent;text-align:right;font:700 34px var(--display);font-variant-numeric:tabular-nums;padding:0;color:var(--ink)}
+#focus .fnum input:focus{outline:none}
+#focus .fnum label:focus-within{outline:2px solid var(--focus);outline-offset:2px}
+#focus .fnum .u{font-size:14px;color:var(--muted);min-width:30px}
+#focus .flog{margin-top:12px;width:100%;height:62px;border:0;border-radius:14px;background:var(--cal);color:#fff;font:800 24px var(--display);font-style:italic;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;touch-action:manipulation}
+#focus .fdone{margin-top:16px;padding:14px;border-radius:14px;background:var(--surface);border:1px solid var(--cal);font-size:15px}
+#focus .fdone b{font:800 22px var(--display);font-style:italic;text-transform:uppercase;color:var(--cal);display:block}
+#focus .fnext{margin-top:18px;font-size:14px;color:var(--muted)}
+#focus .fnext b{color:var(--ink);font-weight:600}
+#focus .fnav{border-top:1px solid var(--line);background:var(--surface);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+#focus .fnav .in2{max-width:560px;margin:0 auto;display:grid;grid-template-columns:1fr 1.4fr;gap:8px}
+#focus .fnav button{height:50px;border-radius:12px;border:1px solid var(--line);background:var(--field);font:700 18px var(--display);cursor:pointer;color:var(--ink)}
+#focus .fnav button:disabled{opacity:.4;cursor:default}
+#focus .fnav button.go{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+#focus .fnav button.fin2{background:var(--protein);border-color:var(--protein);color:#fff}
+body.focusing{overflow:hidden}
+body.focusing #rest{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 #rest{position:fixed;left:12px;right:12px;bottom:calc(70px + env(safe-area-inset-bottom,0px));z-index:30;max-width:536px;margin:0 auto;background:var(--ink);color:var(--bg);border-radius:14px;padding:10px 12px 12px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
 #rest .rrow{display:flex;align-items:center;gap:10px}
 #rest .rt{font:700 30px/1 var(--display);font-variant-numeric:tabular-nums;flex:1}
@@ -423,6 +476,7 @@ body.on-home{overflow:hidden}
   <form class="scanbottom" id="scantype"><label for="scancode">Or type the number under the barcode</label><div class="row2"><input id="scancode" inputmode="numeric" autocomplete="off" placeholder="e.g. 049000028911"><button class="linkbtn go" type="submit">Look up</button></div>
   <p class="tip" style="color:#c9d1db">Looks up the number in Open Food Facts, a free public food database. Nothing else leaves your phone.</p></form>
 </section>
+<section id="focus" hidden aria-label="Workout mode"></section>
 <div id="rest" hidden role="timer" aria-live="off"></div>
 <div id="toast" hidden role="status"></div>
 <input type="file" id="importfile" accept="application/json,.json" hidden>
@@ -647,6 +701,11 @@ function planCard(){
   if(!S.plan) return "";
   return `<div class="plancard"><div class="t"><b>${esc(S.plan.title)}</b>Your custom plan</div><button class="linkbtn" id="build">Rebuild</button></div>`;
 }
+function planLine(p){
+  if(!S.plan) return "";
+  return `<div class="planline"><span class="t"><b>${esc(S.plan.title)}</b></span><button class="linkbtn sm" id="build">Rebuild</button></div>`;
+}
+function topRx(r){ return String(r).replace(/^.*-/,""); }   // "8-10" -> "10": what ✓ logs
 function trainCrossCards(p){
   let h = "";
   const pregInPlan = S.plan && S.plan.answers && (S.plan.answers.around||[]).includes("pregnant");
@@ -702,9 +761,11 @@ function renderTrain(){
       </div>`).join("") : sets.slice(0,R.s).map((s,i)=>`
       <div class="set${s.done?" is-done":""}">
         <span class="n">${i+1}</span>
-        <input inputmode="decimal" placeholder="${(sets.slice(0,i).reverse().find(x=>x.w!=="")||{}).w || (sug && sug.w ? sug.w : bw?"BW":"lb")}" value="${esc(s.w)}" data-ex="${esc(name)}" data-i="${i}" data-k="w" aria-label="${esc(name)} set ${i+1} weight">
+        ${(()=>{ const wPre = (sets.slice(0,i).reverse().find(x=>x.w!=="")||{}).w || (sug && sug.w ? String(sug.w) : "");
+          const amrap = e.amrap && !swapped, rPre = amrap ? "" : topRx(R.r);
+          return `<input inputmode="decimal" class="${wPre?"pre":""}" placeholder="${esc(wPre || (bw?"BW":"lb"))}" value="${esc(s.w)}" data-ex="${esc(name)}" data-i="${i}" data-k="w" aria-label="${esc(name)} set ${i+1} weight">
         <span class="x">×</span>
-        <input inputmode="numeric" placeholder="${e.amrap&&!swapped?"max":esc(R.r)}" value="${esc(s.r)}" data-ex="${esc(name)}" data-i="${i}" data-k="r" aria-label="${esc(name)} set ${i+1} reps">
+        <input inputmode="numeric" class="${rPre?"pre":""}" placeholder="${esc(amrap?"max":rPre)}" value="${esc(s.r)}" data-ex="${esc(name)}" data-i="${i}" data-k="r" aria-label="${esc(name)} set ${i+1} reps">`; })()}
         <button class="done" data-ex="${esc(name)}" data-orig="${esc(e.n)}" data-i="${i}" data-sw="${sug && sug.w ? sug.w : ""}" aria-pressed="${!!s.done}" aria-label="Mark set ${i+1} done">${s.pr&&!isPregnant()?"PR":"✓"}</button>
       </div>`).join("");
     let sw = "";
@@ -719,14 +780,17 @@ function renderTrain(){
       if(bits.length) sw = `<div class="swaps">${bits.join("")}</div>`;
     }
     return `<section class="ex${(e.tag||e.pair)?" linked":""}">
-      <div class="exhead"><span class="exnum">${esc(num_)}</span><span class="exname">${esc(name)}</span></div>
-      <div class="exnote">${note||"&nbsp;"}</div>
+      <div class="exhead"><span class="exnum">${esc(num_)}</span><span class="exname">${esc(name)}</span>${simple?"":`<span class="tagpill">${R.s} × ${esc(e.amrap&&!swapped?"max":R.r)}</span>`}</div>
+      ${note?`<div class="exnote">${note}</div>`:""}
       ${cue?`<details class="cue"><summary>Form tips</summary><ul>${cue.split(" · ").map(c=>`<li>${esc(c)}</li>`).join("")}</ul></details>`:""}
       <div class="sets">${rows}</div>${sw}</section>`;
   }).join("");
-  const restTxt = S.plan && S.plan.mode==="recovery" ? "Go slowly and rest whenever you need." : "Tick a set and the rest timer starts.";
-  return `${recapCard()}${planCard()}${trainCrossCards(p)}${planNotes()}<h2>${esc(P.name)}</h2><p class="sub">${esc(weekNote(p.week).replace(/([^.!?])$/,"$1."))} ${restTxt}</p>
-    <div id="lifts">${cards}</div>
+  const restTxt = S.plan && S.plan.mode==="recovery" ? "Go slowly and rest whenever you need." : "Dark grey numbers are filled in for you: tap ✓ to log them as-is, or type what you actually did.";
+  const liftCount = P.ex.filter(x=>x.type!=="cardio" && x.type!=="circuit").length;
+  const anyDone = Object.values(D.lifts).some(ss=>ss.some(x=>x.done));
+  const startBtn = liftCount && !D.complete ? `<button class="primary start" id="focusgo">${anyDone?"Resume workout":"Start workout"}</button>` : "";
+  return `${recapCard()}${planLine(p)}${trainCrossCards(p)}${planNotes()}<h2>${esc(P.name)}</h2><p class="sub">${esc(weekNote(p.week).replace(/([^.!?])$/,"$1."))} ${restTxt}</p>
+    ${startBtn}<div id="lifts">${cards}</div>
     <button class="primary${D.complete?" ok":""}" id="complete">${D.complete?"Workout finished ✓":"Finish workout"}</button>`;
 }
 
@@ -1266,11 +1330,36 @@ document.addEventListener("click", e=>{
 });
 document.addEventListener("change", e=>{ if(e.target.id==="plift"){ progLift = e.target.value; render(); } });
 
+/* log or un-log one set (list view and workout mode share this) */
+function toggleSet(D, name, orig, i, sw){
+  const s = D.lifts[name][i];
+  s.done = !s.done;
+  const pi=progInfo(cur), P=dayDef(pi.dn), ex=P.ex.find(x=>x.n===orig);
+  if(s.done){
+    if(s.r===""){ if(ex && !(ex.amrap && name===ex.n)){ s.r=topRx(rx(ex,pi.week).r); } }
+    if(s.w===""){ // carry the weight from the set before (most people repeat it), else today's suggestion
+      const prevW = D.lifts[name].slice(0, i).reverse().find(x=>x.w!=="");
+      if(prevW) s.w = prevW.w; else if(sw) s.w = String(sw);
+    }
+    if(ex){ D.rx = D.rx || {}; D.rx[name] = String(rx(ex,pi.week).r); }
+    // personal record? (needs a previous best to beat)
+    const prev = bestE1(name, cur), today = Math.max(0, ...D.lifts[name].filter(x=>x!==s).map(x=>CO.e1rm(num(x.w), num(x.r))));
+    const mine = CO.e1rm(num(s.w), num(s.r));
+    if(!isPregnant() && prev > 0 && mine > prev && mine > today){ D.lifts[name].forEach(x=>delete x.pr); s.pr = true; celebrate(`New record: ${name}, ${s.w} lb × ${s.r}`, true); }
+    const lib = E && E.BY_NAME[name];
+    if(!(lib && lib.p==="pfwarm")) startRest(CO.restFor(name, S.plan && S.plan.answers ? S.plan.answers.goal : "muscle", S.plan ? S.plan.mode : "normal"));
+  } else { delete s.pr; }
+}
+function toggleComplete(D){
+  D.complete=!D.complete; saveDay(cur); render();
+  if(D.complete && cur===todayStr() && firstTime(cur,"workout")){ const st = weekStats(weekStartOf(cur)); celebrate(`Workout done. That's ${st.done}${st.planned?` of ${st.planned}`:""} this week.`, true); }
+}
 function render(){
   renderHeader();
   document.querySelectorAll("[data-tab]").forEach(b=>b.setAttribute("aria-selected", b.dataset.tab===tab));
   $("#main").innerHTML = backupBanner() + (tab==="train" ? renderTrain() : tab==="eat" ? renderEat() : renderBody());
   if(tab==="eat") initCarousel();
+  if(FOCUS) renderFocus();
 }
 function updateFoodCal(){
   const c = Math.round(num($("#fp")?.value)*4 + num($("#fc")?.value)*4 + num($("#ff")?.value)*9);
@@ -1284,24 +1373,7 @@ document.addEventListener("click", e=>{
   if(t.id==="today"){cur=todayStr();render();return}
   const D = day(cur);
   if(t.classList.contains("done") && t.dataset.ex){
-    const name = t.dataset.ex, s = D.lifts[name][+t.dataset.i];
-    s.done = !s.done;
-    const pi=progInfo(cur), P=dayDef(pi.dn), ex=P.ex.find(x=>x.n===t.dataset.orig);
-    if(s.done){
-      if(s.r===""){ if(ex && !(ex.amrap && name===ex.n)){ s.r=String(rx(ex,pi.week).r).replace(/^.*-/,""); } }
-      if(s.w===""){ // carry the weight from the set before (most people repeat it), else today's suggestion
-        const sets_ = D.lifts[name], i_ = +t.dataset.i;
-        const prevW = sets_.slice(0, i_).reverse().find(x=>x.w!=="");
-        if(prevW) s.w = prevW.w; else if(t.dataset.sw) s.w = t.dataset.sw;
-      }
-      if(ex){ D.rx = D.rx || {}; D.rx[name] = String(rx(ex,pi.week).r); }
-      // personal record? (needs a previous best to beat)
-      const prev = bestE1(name, cur), today = Math.max(0, ...D.lifts[name].filter(x=>x!==s).map(x=>CO.e1rm(num(x.w), num(x.r))));
-      const mine = CO.e1rm(num(s.w), num(s.r));
-      if(!isPregnant() && prev > 0 && mine > prev && mine > today){ D.lifts[name].forEach(x=>delete x.pr); s.pr = true; celebrate(`New record: ${name}, ${s.w} lb × ${s.r}`, true); }
-      const lib = E && E.BY_NAME[name];
-      if(!(lib && lib.p==="pfwarm")) startRest(CO.restFor(name, S.plan && S.plan.answers ? S.plan.answers.goal : "muscle", S.plan ? S.plan.mode : "normal"));
-    } else { delete s.pr; }
+    toggleSet(D, t.dataset.ex, t.dataset.orig, +t.dataset.i, t.dataset.sw);
     saveDay(cur); render(); return;
   }
   if(t.dataset.rec){
@@ -1313,9 +1385,8 @@ document.addEventListener("click", e=>{
   if(t.id==="build"){openBuilder();return}
   if(t.id==="export"){exportData();return}
   if(t.id==="import"){$("#importfile").click();return}
-  if(t.id==="complete"){D.complete=!D.complete;saveDay(cur);render();
-    if(D.complete && cur===todayStr() && firstTime(cur,"workout")){ const st = weekStats(weekStartOf(cur)); celebrate(`Workout done. That's ${st.done}${st.planned?` of ${st.planned}`:""} this week.`, true); }
-    return}
+  if(t.id==="complete"){ toggleComplete(D); return }
+  if(t.id==="focusgo"){ openFocus(); return }
   if(t.id==="addfood"){
     const f = {name:$("#fn").value.trim()||"Food", p:num($("#fp").value), c:num($("#fc").value), f:num($("#ff").value)};
     if(!f.p && !f.c && !f.f){$("#fp").focus();setStatus("Enter protein, carbs or fat to add a food.");return}
@@ -1852,6 +1923,128 @@ function recapCard(){
     <button class="linkbtn" data-act="recap-done" data-w="${lastWs}">Got it</button></div>`;
 }
 document.addEventListener("click", e=>{ const t = e.target.closest('[data-act="recap-done"]'); if(!t) return; S.recapSeen[t.dataset.w] = true; cacheLocal(); render(); });
+
+/* ---------- workout mode: one exercise at a time, big buttons ---------- */
+let FOCUS = null;   // {i}: which exercise is on screen
+function focusList(){
+  const p = progInfo(cur); if(p.before || !S.plan) return [];
+  const P = dayDef(p.dn); if(!P || P.rest) return [];
+  const D = day(cur);
+  return P.ex.filter(e=>e.type!=="cardio" && e.type!=="circuit").map(e=>{
+    const name = shown(e, D), R = rx(e, p.week);
+    const sets = D.lifts[name] || []; while(sets.length < R.s) sets.push({w:"",r:"",done:false}); D.lifts[name] = sets;
+    return {e, name, R};
+  });
+}
+function openFocus(){
+  const L = focusList(); if(!L.length) return;
+  const D = day(cur), i = L.findIndex(x=>D.lifts[x.name].slice(0,x.R.s).some(s=>!s.done));
+  FOCUS = {i: i<0 ? L.length-1 : i};
+  $("#focus").hidden = false; document.body.classList.add("focusing"); renderFocus();
+}
+function closeFocus(){ FOCUS = null; $("#focus").hidden = true; document.body.classList.remove("focusing"); render(); }
+function focusSug(it){ return CO && !it.e.amrap ? CO.suggest(it.name, sessionsFor(it.name, cur).slice(0,1), it.R.r, {mode: S.plan ? S.plan.mode : "normal"}) : null; }
+/* the numbers ✓ will log if the person doesn't change them (same rules as toggleSet) */
+function focusPre(it, sets, i, sug){
+  const s = sets[i], amrap = it.e.amrap && it.name===it.e.n;
+  const prevW = sets.slice(0,i).reverse().find(x=>x.w!=="");
+  return { w: s.w!=="" ? s.w : prevW ? prevW.w : (sug && sug.w ? String(sug.w) : ""),
+           r: s.r!=="" ? s.r : amrap ? "" : topRx(it.R.r) };
+}
+function renderFocus(){
+  const el = $("#focus");
+  if(!FOCUS) return;
+  const L = focusList();
+  if(!L.length){ closeFocus(); return; }
+  FOCUS.i = Math.max(0, Math.min(FOCUS.i, L.length-1));
+  const D = day(cur), it = L[FOCUS.i], {e, name, R} = it, sets = D.lifts[name], shownSets = sets.slice(0, R.s);
+  const sug = focusSug(it), cue = CO ? CO.cues(name) : "", bw = isBW(name, e);
+  const lib = E && E.BY_NAME[name], simple = lib && (lib.p==="pf" || lib.p==="pfwarm");
+  const ci = shownSets.findIndex(s=>!s.done);
+  const total = L.reduce((a,x)=>a+x.R.s,0), done = L.reduce((a,x)=>a+D.lifts[x.name].slice(0,x.R.s).filter(s=>s.done).length,0);
+  const next = L[FOCUS.i+1], isLast = FOCUS.i === L.length-1;
+  const repsNumeric = /^\d+$/.test(topRx(R.r)) || (e.amrap && name===e.n);
+  const amrap = e.amrap && name===e.n;
+  const others = (dayDef(progInfo(cur).dn).ex||[]).filter(x=>x.type==="cardio"||x.type==="circuit").length;
+  const note = name !== e.n ? ((E && E.PF_NOTES[name]) || "") : (e.note || "");
+  const rows = shownSets.map((s,i)=>{
+    if(i===ci){
+      const pre = focusPre(it, sets, i, sug);
+      if(simple) return `<div class="fcur"><div class="lab">Set ${i+1} of ${R.s} · ${esc(R.r)}</div><button class="flog" data-flog="${i}">Done</button></div>`;
+      const wBox = bw ? "" : `<div class="fnum"><button data-fstep="w" data-d="-1" aria-label="Less weight">−</button>
+          <label><input inputmode="decimal" value="${esc(pre.w)}" placeholder="—" data-ex="${esc(name)}" data-i="${i}" data-k="w" aria-label="Weight for set ${i+1}"><span class="u">lb</span></label>
+          <button data-fstep="w" data-d="1" aria-label="More weight">+</button></div>`;
+      const rBox = repsNumeric ? `<div class="fnum"><button data-fstep="r" data-d="-1" aria-label="Fewer reps">−</button>
+          <label><input inputmode="numeric" value="${esc(pre.r)}" placeholder="${amrap?"max":"0"}" data-ex="${esc(name)}" data-i="${i}" data-k="r" aria-label="Reps for set ${i+1}"><span class="u">reps</span></label>
+          <button data-fstep="r" data-d="1" aria-label="More reps">+</button></div>`
+        : `<div class="fnum" style="grid-template-columns:1fr"><label><input inputmode="text" style="width:8ch;text-align:center" value="${esc(pre.r)}" data-ex="${esc(name)}" data-i="${i}" data-k="r" aria-label="Reps or time for set ${i+1}"></label></div>`;
+      return `<div class="fcur"><div class="lab">Set ${i+1} of ${R.s}</div>${wBox}${rBox}
+        <p class="fhint" id="fhint" role="alert"></p>
+        <button class="flog" data-flog="${i}" data-needw="${bw?"":"1"}">Log set ${i+1}</button></div>`;
+    }
+    if(s.done) return `<button class="fset isdone${s.pr?" pr":""}" data-fundo="${i}" aria-label="Set ${i+1} logged. Tap to undo."><span class="k">Set ${i+1}</span><span class="v">${simple?esc(R.r):`${s.w!==""&&num(s.w)>0?`${esc(s.w)} lb × `:""}${esc(s.r)}${/^\d+$/.test(s.r)?" reps":""}`}</span><span class="ck">${s.pr?"PR":"✓"}</span></button>`;
+    return `<div class="fset todo"><span class="k">Set ${i+1}</span><span class="v">${esc(R.r)}${/^\d+$/.test(topRx(R.r))?" reps":""}</span></div>`;
+  }).join("");
+  const finished = ci < 0;
+  const doneBox = finished ? `<div class="fdone"><b>${isLast ? "That's the last one" : "Exercise done"}</b>${isLast ? (D.complete ? "Workout finished. Nice work." : `Tap Finish workout to wrap up.${others?` Your plan also has ${others===1?"one more item":`${others} more items`} to log on the list view.`:""}`) : `Up next: ${esc(next.name)}.`}</div>` : "";
+  el.innerHTML = `<div class="fwrap"><div class="fin">
+      <div class="ftop"><button class="iconbtn" data-fclose aria-label="Back to the list">✕</button>
+        <div class="fprog" role="progressbar" aria-label="Sets done" aria-valuenow="${done}" aria-valuemin="0" aria-valuemax="${total}"><i style="width:${total?Math.round(done/total*100):0}%"></i></div>
+        <span class="fcount">${FOCUS.i+1} of ${L.length}</span></div>
+      <div class="fkick">${esc(dayDef(progInfo(cur).dn).name)}${e.pair||(e.tag&&/[ab]$/.test(e.tag))?" · Superset":""}</div>
+      <h2 class="fname">${esc(name)}</h2>
+      <div class="frow"><span class="tagpill">${R.s} sets × ${esc(amrap?"max":R.r)}</span>${note?`<span class="tip" style="margin:0">${esc(note)}</span>`:""}</div>
+      ${sug ? `<p class="fsug">${esc(sug.text)}</p>` : ""}
+      ${cue ? `<details class="cue"><summary>Form tips</summary><ul>${cue.split(" · ").map(c=>`<li>${esc(c)}</li>`).join("")}</ul></details>` : ""}
+      <div class="fdemo" data-demo="${esc(name)}"></div>
+      <div class="fsets">${rows}</div>${doneBox}
+      ${next && !finished ? `<p class="fnext">Next up: <b>${esc(next.name)}</b> · ${next.R.s} × ${esc(next.R.r)}</p>` : ""}
+    </div></div>
+    <div class="fnav"><div class="in2">
+      <button data-fnav="-1"${FOCUS.i===0?" disabled":""}>‹ Previous</button>
+      ${isLast ? `<button class="${D.complete?"go":"fin2"}" data-ffinish>${D.complete?"Back to the list":"Finish workout"}</button>`
+               : `<button class="${finished?"go":""}" data-fnav="1">Next exercise ›</button>`}
+    </div></div>`;
+  if(typeof fillDemos === "function") fillDemos(el);
+}
+$("#focus").addEventListener("click", e=>{
+  const t = e.target.closest("button"); if(!t || !FOCUS) return;
+  const L = focusList(), it = L[FOCUS.i]; if(!it) return;
+  const D = day(cur), sets = D.lifts[it.name];
+  if(t.hasAttribute("data-fclose")){ closeFocus(); return; }
+  if(t.dataset.fnav){ FOCUS.i += +t.dataset.fnav; renderFocus(); $("#focus .fwrap").scrollTop = 0; return; }
+  if(t.hasAttribute("data-ffinish")){ if(!D.complete) toggleComplete(D); closeFocus(); return; }
+  if(t.dataset.fstep){
+    const i = sets.slice(0,it.R.s).findIndex(s=>!s.done); if(i<0) return;
+    const pre = focusPre(it, sets, i, focusSug(it)), k = t.dataset.fstep, d = +t.dataset.d;
+    if(k==="w"){ const w = num(pre.w), inc = CO.step(it.name, w) || 5; sets[i].w = String(Math.max(0, Math.round((w + d*inc)*10)/10)); }
+    else { sets[i].r = String(Math.max(0, Math.floor(num(pre.r)) + d)); }
+    if(k==="w" && sets[i].r==="" && pre.r!=="") sets[i].r = pre.r;      // keep the shown reps
+    if(k==="r" && sets[i].w==="" && pre.w!=="") sets[i].w = pre.w;      // keep the shown weight
+    saveDay(cur); renderFocus(); return;
+  }
+  if(t.dataset.flog!==undefined || t.dataset.fundo!==undefined){
+    const i = +(t.dataset.flog ?? t.dataset.fundo), sug = focusSug(it);
+    if(t.dataset.needw && t.dataset.flog!==undefined){   // no weight to log yet: ask for it instead of saving a blank
+      const pre = focusPre(it, sets, i, sug);
+      if(pre.w===""){ const inp = $('#focus input[data-k="w"]'); $("#fhint").textContent = "Enter the weight you used first."; if(inp) inp.focus(); return; }
+      if(sets[i].w==="") sets[i].w = pre.w;
+    }
+    if(t.dataset.flog!==undefined && $('#focus input[data-k="r"]')){
+      const pre = focusPre(it, sets, i, sug);
+      if(pre.r===""){ $("#fhint").textContent = "Enter how many reps you did first."; $('#focus input[data-k="r"]').focus(); return; }
+      if(sets[i].r==="") sets[i].r = pre.r;
+    }
+    toggleSet(D, it.name, it.e.n, i, sug && sug.w);
+    saveDay(cur);
+    // last set of this exercise: move to the next one while you rest
+    if(t.dataset.flog!==undefined && sets.slice(0,it.R.s).every(s=>s.done) && FOCUS.i < L.length-1){
+      FOCUS.i++; showToast(`Up next: ${L[FOCUS.i].name}`);
+      requestAnimationFrame(()=>{ const w = $("#focus .fwrap"); if(w) w.scrollTop = 0; });
+    }
+    render(); return;
+  }
+});
 
 /* ---------- rest timer + toasts ---------- */
 let REST = null, restTick = null, audioCtx = null, wakeLock = null;

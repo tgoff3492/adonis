@@ -249,5 +249,5 @@ function suggest(name, sessions, rx, opts) {
 function fmtW(w) { return Number.isInteger(w) ? String(w) : w.toFixed(1); }
 function num(v) { const n = parseFloat(v); return isFinite(n) ? n : 0; }
 
-root.AdonisCoach = { cues, restFor, suggest, e1rm, kind };
+root.AdonisCoach = { cues, restFor, suggest, e1rm, kind, step };
 })(typeof window !== "undefined" ? window : globalThis);
