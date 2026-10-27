@@ -59,5 +59,23 @@ for (const experience of ["1", "2", "3"]) for (const days of ["3", "4", "5", "6"
   }
 }
 
+/* ---------- exercise demos ---------- */
+require(path.join(ROOT, "demos.js"));
+{ const D = globalThis.AdonisDemos;
+  const names = [...new Set([...E.LIB.map(x => x.n), ...(E.FLIB || []).map(x => x.n)])];
+  const NO_DEMO = /Kegel|Connection Breath|Pelvic Floor Warm-Up|Clamshell/;
+  for (const n of names) {
+    if (NO_DEMO.test(n)) continue;
+    check(`demo exists: ${n}`, D.has(n));
+    if (D.has(n)) for (const k of [0, 0.5, 1]) { const s = D.svg(n, k); check(`demo draws cleanly: ${n} @${k}`, s.length > 200 && !/NaN|undefined/.test(s), s.slice(0, 80)); }
+  } }
+
+/* ---------- release files ---------- */
+{ const fs = require("fs");
+  const sw = fs.readFileSync(path.join(ROOT, "sw.js"), "utf8");
+  check("sw.js is not empty and has a cache VERSION", /const VERSION = "adonis-v\d+"/.test(sw) && /addEventListener\("fetch"/.test(sw));
+  for (const f of ["index.html", "engine.js", "coach.js", "nutrition.js", "meals.js", "foods.js"])
+    check(`${f} is not empty`, fs.statSync(path.join(ROOT, f)).size > 1000); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

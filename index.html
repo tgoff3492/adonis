@@ -269,6 +269,25 @@ details.cue ul{margin:6px 0 0;padding-left:18px;color:var(--ink)}
 .wk .now{color:var(--ink);font-weight:700}
 .ci{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
 .ci input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--field);font-size:17px}
+/* ---------- exercise demos ---------- */
+.fdemo{margin:10px 0 4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 8px 2px}
+.fdemo[hidden]{display:none}
+.fdemo .demo-svg{display:block;width:100%;height:auto;max-height:190px}
+.fdemo .demo-pair{display:flex;gap:6px}.fdemo .demo-pair .demo-svg{width:50%}
+.fdemo .demo-cap{font-size:12px;color:var(--muted);text-align:center;padding-bottom:4px}
+details.cue .fdemo{margin:8px 0 6px}
+.dp-floor{stroke:var(--line);stroke-width:2}
+.dp-body,.dp-limb{stroke:var(--ink);stroke-linecap:round;stroke-linejoin:round;fill:none}
+.dp-far{stroke:var(--muted);opacity:.5;stroke-linecap:round;stroke-linejoin:round;fill:none}
+.dp-head{fill:var(--ink)}
+.dp-torso{fill:var(--ink);stroke:var(--ink);stroke-width:6;stroke-linejoin:round}
+.dp-eq{fill:var(--line)}
+.dp-eqs{stroke:var(--line);stroke-linecap:round}
+.dp-load{fill:var(--protein)}
+.dp-loads{stroke:var(--protein);stroke-linecap:round}
+.dp-hole{fill:var(--surface)}
+.dp-cable{stroke:var(--muted);stroke-width:1.5}
+.dp-band{stroke:var(--protein);opacity:.75;stroke-linecap:round}
 /* ---------- workout mode ---------- */
 .primary.start{background:var(--protein);color:#fff;margin:2px 0 14px;font:800 22px var(--display);font-style:italic;letter-spacing:.03em;text-transform:uppercase;padding:16px}
 .planline{display:flex;align-items:center;gap:10px;margin:12px 0 0;font-size:14px;color:var(--muted)}
@@ -519,6 +538,7 @@ body.on-home{overflow:hidden}
 <script src="meals.js"></script>
 <script src="foods.js"></script>
 <script src="coach.js"></script>
+<script src="demos.js"></script>
 <script>
 const DEFAULTS = {start:todayStr(), cal:2400, protein:175, carbs:265, fat:70, goalWeight:"", goalBf:"", goalDate:""};
 const RECOVERY = ["Walking","Yoga","Stretching","Mobility","Hiking","Foam rolling","Biking"];
@@ -810,7 +830,7 @@ function renderTrain(){
     return `<section class="ex${(e.tag||e.pair)?" linked":""}">
       <div class="exhead"><span class="exnum">${esc(num_)}</span><span class="exname">${esc(name)}</span>${simple?"":`<span class="tagpill">${R.s} × ${esc(e.amrap&&!swapped?"max":R.r)}</span>`}</div>
       ${note?`<div class="exnote">${note}</div>`:""}
-      ${cue?`<details class="cue"><summary>Form tips</summary><ul>${cue.split(" · ").map(c=>`<li>${esc(c)}</li>`).join("")}</ul></details>`:""}
+      ${cue||hasDemo(name)?`<details class="cue"><summary>How to do it</summary><div class="fdemo" data-demo="${esc(name)}" hidden></div>${cue?`<ul>${cue.split(" · ").map(c=>`<li>${esc(c)}</li>`).join("")}</ul>`:""}</details>`:""}
       <div class="sets">${rows}</div>${sw}</section>`;
   }).join("");
   const restTxt = S.plan && S.plan.mode==="recovery" ? "Go slowly and rest whenever you need." : "Dark grey numbers are filled in for you: tap ✓ to log them as-is, or type what you actually did.";
@@ -2007,6 +2027,11 @@ function renderToday(){
   return h;
 }
 
+/* ---------- exercise demos (demos.js) ---------- */
+const hasDemo = n => !!(window.AdonisDemos && AdonisDemos.has(n));
+function fillDemos(el){ if(window.AdonisDemos) AdonisDemos.fill(el); }
+document.addEventListener("toggle", e=>{ const d = e.target; if(d.matches && d.matches("details.cue") && d.open) fillDemos(d); }, true);
+
 /* ---------- workout mode: one exercise at a time, big buttons ---------- */
 let FOCUS = null;   // {i}: which exercise is on screen
 function focusList(){
@@ -2078,8 +2103,8 @@ function renderFocus(){
       <h2 class="fname">${esc(name)}</h2>
       <div class="frow"><span class="tagpill">${R.s} sets × ${esc(amrap?"max":R.r)}</span>${note?`<span class="tip" style="margin:0">${esc(note)}</span>`:""}</div>
       ${sug ? `<p class="fsug">${esc(sug.text)}</p>` : ""}
+      <div class="fdemo" data-demo="${esc(name)}" hidden></div>
       ${cue ? `<details class="cue"><summary>Form tips</summary><ul>${cue.split(" · ").map(c=>`<li>${esc(c)}</li>`).join("")}</ul></details>` : ""}
-      <div class="fdemo" data-demo="${esc(name)}"></div>
       <div class="fsets">${rows}</div>${doneBox}
       ${next && !finished ? `<p class="fnext">Next up: <b>${esc(next.name)}</b> · ${next.R.s} × ${esc(next.R.r)}</p>` : ""}
     </div></div>
