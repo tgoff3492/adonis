@@ -103,7 +103,7 @@ h2{font:700 24px/1.1 var(--display);margin:22px 0 4px}
 .sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
 
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-nav.tabs .in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr)}
+nav.tabs .in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
 nav.tabs button{border:0;background:none;padding:14px 0;cursor:pointer;font:600 18px var(--display);color:var(--muted);border-top:3px solid transparent}
 nav.tabs button[aria-selected="true"]{color:var(--ink);border-top-color:var(--ink)}
 @media (prefers-reduced-motion:no-preference){.plate circle.fill{transition:stroke-dashoffset .5s ease}}
@@ -242,6 +242,33 @@ details.notes ul{margin:6px 0 0;padding-left:18px}
 details.cue{margin:0 0 8px 36px;font-size:14px}
 details.cue summary{cursor:pointer;color:var(--carbs);font-weight:600}
 details.cue ul{margin:6px 0 0;padding-left:18px;color:var(--ink)}
+/* ---------- today ---------- */
+.hero{margin:14px 0 12px;padding:18px 16px 16px;border-radius:14px;background:var(--ink);color:var(--bg);position:relative;overflow:hidden}
+.hero::after{content:"";position:absolute;right:-30px;top:0;bottom:0;width:120px;background:repeating-linear-gradient(115deg,var(--protein) 0 14px,transparent 14px 28px);opacity:.9}
+.hero .kick{font:700 14px var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--protein);position:relative;z-index:1}
+.hero .hl{font:800 42px/0.98 var(--display);font-style:italic;text-transform:uppercase;margin:4px 0 6px;max-width:78%;position:relative;z-index:1}
+.hero .tag{margin:0;font-size:15px;opacity:.82;max-width:74%;position:relative;z-index:1}
+.tcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px}
+.tcard .th{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.tcard .th b{font:700 20px/1.1 var(--display);flex:1}
+.tcard .th span{font-size:13px;color:var(--muted)}
+.tcard p{margin:0 0 10px;color:var(--muted);font-size:15px}
+.tcard .acts{display:flex;gap:8px;flex-wrap:wrap}
+.tcard .primary{margin-top:4px}
+.meter{margin:8px 0}
+.meter .ml{display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px}
+.meter .ml b{font-weight:600}
+.meter .mb{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+.meter .mb i{display:block;height:100%;border-radius:5px}
+.wk{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin:6px 0 10px}
+.wk div{text-align:center;font-size:12px;color:var(--muted)}
+.wk i{display:block;margin:4px auto 0;width:30px;height:30px;border-radius:50%;border:2px solid var(--line);font-style:normal;line-height:26px;font-size:14px;color:#fff}
+.wk .plan i{border-color:var(--ink)}
+.wk .did i{background:var(--cal);border-color:var(--cal)}
+.wk .miss i{border-style:dashed}
+.wk .now{color:var(--ink);font-weight:700}
+.ci{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+.ci input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--field);font-size:17px}
 /* ---------- workout mode ---------- */
 .primary.start{background:var(--protein);color:#fff;margin:2px 0 14px;font:800 22px var(--display);font-style:italic;letter-spacing:.03em;text-transform:uppercase;padding:16px}
 .planline{display:flex;align-items:center;gap:10px;margin:12px 0 0;font-size:14px;color:var(--muted)}
@@ -481,7 +508,8 @@ body.on-home{overflow:hidden}
 <div id="toast" hidden role="status"></div>
 <input type="file" id="importfile" accept="application/json,.json" hidden>
 <nav class="tabs" aria-label="Sections"><div class="in" role="tablist">
-  <button role="tab" data-tab="train" aria-selected="true">Train</button>
+  <button role="tab" data-tab="today" aria-selected="true">Today</button>
+  <button role="tab" data-tab="train" aria-selected="false">Train</button>
   <button role="tab" data-tab="eat" aria-selected="false">Eat</button>
   <button role="tab" data-tab="body" aria-selected="false">Body</button>
 </div></nav>
@@ -501,7 +529,7 @@ const MP = window.AdonisMeals;
 const N = window.AdonisNutrition;
 const E = window.AdonisEngine;
 let cur = todayStr();
-let tab = "train";
+let tab = "today";
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -774,8 +802,8 @@ function renderTrain(){
       const others = P.ex.map(x=>shown(x,D));
       const easier = E.swap(name, -1, ctx, others), harder = E.swap(name, 1, ctx, others);
       const bits = [];
-      if(easier) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(easier)}">Easier</button>`);
-      if(harder) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(harder)}">Harder</button>`);
+      if(easier) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(easier)}" aria-label="Swap for an easier exercise: ${esc(easier)}">Swap: easier</button>`);
+      if(harder) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(harder)}" aria-label="Swap for a harder exercise: ${esc(harder)}">Swap: harder</button>`);
       if(swapped) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(e.n)}">Undo</button><span class="was">Swapped from ${esc(e.n)}</span>`);
       if(bits.length) sw = `<div class="swaps">${bits.join("")}</div>`;
     }
@@ -888,7 +916,7 @@ function renderEat(){
     const canCut = r.status!=="pregnant" && !(r.cut && !r.cut.done);
     top = `${eatMessages(r)}<div class="nsum"><div class="k">${esc(goalLine(r))}${r.cycle&&S.plan?` · ${isTrainingDay(cur)?"Training day":"Rest day"} carbs`:""}</div>
       <div class="big">${T.cal.toLocaleString()} <span class="k">calories today</span></div>
-      <div class="acts">${canCut?`<button class="linkbtn" data-act="start-cut">Start a cut</button>`:""}${r.cut && !r.cut.done?`<button class="linkbtn" data-act="cut-end">End cut early</button>`:""}${r.status==="breastfeeding"?`<button class="linkbtn" data-act="bf-stop">Stopped breastfeeding</button>`:""}<button class="linkbtn" data-act="nutri-edit">Edit my answers</button><button class="linkbtn" data-act="nutri-why">How this is calculated</button></div>
+      <div class="acts">${canCut?`<button class="linkbtn" data-act="start-cut">${r.goal==="cut"?"Set how long to cut":"Start a cut"}</button>`:""}${r.cut && !r.cut.done?`<button class="linkbtn" data-act="cut-end">End cut early</button>`:""}${r.status==="breastfeeding"?`<button class="linkbtn" data-act="bf-stop">Stopped breastfeeding</button>`:""}<button class="linkbtn" data-act="nutri-edit">Edit my answers</button><button class="linkbtn" data-act="nutri-why">How this is calculated</button></div>
       <div id="why" hidden>${whyBlock(r)}</div></div>`;
   }
   const list = D.food.length ? D.food.map((f,i)=>`
@@ -1357,7 +1385,7 @@ function toggleComplete(D){
 function render(){
   renderHeader();
   document.querySelectorAll("[data-tab]").forEach(b=>b.setAttribute("aria-selected", b.dataset.tab===tab));
-  $("#main").innerHTML = backupBanner() + (tab==="train" ? renderTrain() : tab==="eat" ? renderEat() : renderBody());
+  $("#main").innerHTML = backupBanner() + (tab==="today" ? renderToday() : tab==="train" ? renderTrain() : tab==="eat" ? renderEat() : renderBody());
   if(tab==="eat") initCarousel();
   if(FOCUS) renderFocus();
 }
@@ -1387,6 +1415,7 @@ document.addEventListener("click", e=>{
   if(t.id==="import"){$("#importfile").click();return}
   if(t.id==="complete"){ toggleComplete(D); return }
   if(t.id==="focusgo"){ openFocus(); return }
+  if(t.dataset.gotab){ tab = t.dataset.gotab; if(tab==="body") bsub = ""; render(); window.scrollTo(0,0); return }
   if(t.id==="addfood"){
     const f = {name:$("#fn").value.trim()||"Food", p:num($("#fp").value), c:num($("#fc").value), f:num($("#ff").value)};
     if(!f.p && !f.c && !f.f){$("#fp").focus();setStatus("Enter protein, carbs or fat to add a food.");return}
@@ -1924,6 +1953,60 @@ function recapCard(){
 }
 document.addEventListener("click", e=>{ const t = e.target.closest('[data-act="recap-done"]'); if(!t) return; S.recapSeen[t.dataset.w] = true; cacheLocal(); render(); });
 
+/* ---------- today: one glance at the whole day ---------- */
+const TAGLINES = ["Board the Gains Train.", "Show up. Log it. Repeat.", "One set at a time.", "Consistency beats intensity.", "Future you says thanks.", "Small plates add up.", "You don't have to feel like it. Just start."];
+function renderToday(){
+  const D = day(cur), isToday = cur===todayStr();
+  const p = S.plan ? progInfo(cur) : null, P = p && !p.before ? dayDef(p.dn) : null;
+  const dn = parse(cur).toLocaleDateString(undefined,{weekday:"long", month:"short", day:"numeric"});
+  const head = !S.plan ? "Let's get rolling" : p.before ? "Almost go time" : P.rest ? (P.name==="Rest" ? "Rest day" : "Recovery day") : `${P.name} day`;
+  const tag = TAGLINES[(diff(cur, "2026-01-01") % TAGLINES.length + TAGLINES.length) % TAGLINES.length];
+  let h = `<section class="hero"><div class="kick">${!S.plan ? "Welcome to Adonis" : p.before ? "Starting soon" : `Week ${p.week} of 4${isToday?"":` · ${esc(dn)}`}`}</div><h2 class="hl">${esc(head)}</h2><p class="tag">${esc(tag)}</p></section>`;
+
+  // workout
+  if(!S.plan) h += `<div class="tcard"><div class="th"><b>Your training plan</b></div><p>Answer a few quick questions and Adonis builds a 4-week plan around your goal, schedule and equipment.</p><button class="primary" id="build" style="background:var(--protein);color:#fff">Build my plan</button></div>`;
+  else if(p.before) h += `<div class="tcard"><div class="th"><b>Training</b></div><p>Your program starts ${esc(parse(S.settings.start).toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"}))}.</p></div>`;
+  else if(P.rest){
+    const did = D.recovery || [];
+    h += `<div class="tcard"><div class="th"><b>Recovery</b>${did.length?`<span>${esc(did.join(", "))} ✓</span>`:""}</div><p>Keep it easy today: a walk, some stretching or mobility.</p><button class="linkbtn" data-gotab="train">Log what you did</button></div>`;
+  } else {
+    const L = focusList(), total = L.reduce((a,x)=>a+x.R.s,0), done = L.reduce((a,x)=>a+D.lifts[x.name].slice(0,x.R.s).filter(s=>s.done).length,0);
+    const others = P.ex.length - L.length, prs = Object.values(D.lifts).reduce((a,ss)=>a+ss.filter(s=>s.pr).length,0);
+    const status = D.complete ? `Finished ✓${prs?` · ${prs} new record${prs>1?"s":""}`:""}` : done ? `${done} of ${total} sets done` : `${L.length} exercises · ${total} sets${others?` + ${others} more`:""}`;
+    h += `<div class="tcard"><div class="th"><b>Workout</b><span>${esc(status)}</span></div>
+      <p>${esc(L.slice(0,4).map(x=>x.name).join(", "))}${L.length>4?", and more":""}.</p>
+      ${D.complete ? `<button class="linkbtn" data-gotab="train">See what you did</button>`
+        : `<button class="primary start" id="focusgo">${done?"Resume workout":"Start workout"}</button><div class="acts"><button class="linkbtn" data-gotab="train">See the full list</button></div>`}</div>`;
+  }
+
+  // food
+  if(!S.nutri) h += `<div class="tcard"><div class="th"><b>Fuel</b></div><p>Set your daily calories and protein. It takes about a minute.</p><button class="linkbtn go" data-act="nutri-edit">Set up my nutrition</button></div>`;
+  else {
+    const T = todayTargets(), t = totals(D);
+    const meter = (lbl, val, target, color, unit) => { const left = Math.round(target - val);
+      return `<div class="meter"><div class="ml"><b>${lbl}</b><span>${left>=0?`${left.toLocaleString()}${unit} left`:`${(-left).toLocaleString()}${unit} over`}</span></div><div class="mb"><i style="width:${Math.min(100, Math.round(val/(target||1)*100))}%;background:${color}"></i></div></div>`; };
+    h += `<div class="tcard"><div class="th"><b>Fuel</b><span>${t.cal.toLocaleString()} of ${T.cal.toLocaleString()} cal</span></div>
+      ${meter("Protein", t.p, T.protein, "var(--protein)", " g")}${meter("Calories", t.cal, T.cal, "var(--cal)", "")}
+      <div class="acts" style="margin-top:10px"><button class="linkbtn go" data-gotab="eat">Log food</button></div></div>`;
+  }
+
+  // check-in
+  const ws = weights(), a7 = avg7(ws, cur);
+  h += `<div class="tcard"><div class="th"><b>Check-in</b>${a7!=null?`<span>7-day average ${a7.toFixed(1)} lb</span>`:""}</div>
+    <div class="ci"><input id="bw" inputmode="decimal" placeholder="Weight (lb)" value="${esc(D.weight)}" aria-label="Today's weight in pounds"><button class="linkbtn" data-gotab="body">Trends</button></div></div>`;
+
+  // this week
+  if(S.plan){
+    const wsd = weekStartOf(cur), st = weekStats(wsd), sk = streaks();
+    const dots = st.days.map(d=>{ const pl = plannedOn(d), did = didWorkout(d), past = d < todayStr();
+      const cls = [pl?"plan":"", did?"did":"", pl && !did && past ? "miss":"", d===todayStr()?"now":""].join(" ");
+      return `<div class="${cls}">${esc(parse(d).toLocaleDateString(undefined,{weekday:"narrow"}))}<i>${did?"✓":""}</i></div>`; }).join("");
+    h += `<div class="tcard"><div class="th"><b>This week</b><span>${st.done} of ${st.planned} workouts</span></div><div class="wk">${dots}</div>
+      <p style="margin:0">${sk.weeks?`🔥 ${sk.weeks}-week streak. `:""}${sk.protein?`${sk.protein} day${sk.protein>1?"s":""} in a row at your protein goal.`:""}${!sk.weeks&&!sk.protein?"Hit every planned workout this week to start a streak.":""}</p></div>`;
+  }
+  return h;
+}
+
 /* ---------- workout mode: one exercise at a time, big buttons ---------- */
 let FOCUS = null;   // {i}: which exercise is on screen
 function focusList(){
@@ -2167,7 +2250,7 @@ function checkBodyWins(d, what){
 
 /* ---------- account menu: reset plans, send feedback ---------- */
 const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
-const APP_VERSION = "2026.10.12";
+const APP_VERSION = "2026.10.26";   // bump with the cache VERSION in sw.js on every release
 function openMenu(){
   openSheet("Your Adonis", `<div class="menu-list">
     <button class="menu-item" data-menu="feedback"><span>Send feedback<small>Tell us what's working and what isn't</small></span></button>
