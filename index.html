@@ -702,7 +702,7 @@ function renderTrain(){
       </div>`).join("") : sets.slice(0,R.s).map((s,i)=>`
       <div class="set${s.done?" is-done":""}">
         <span class="n">${i+1}</span>
-        <input inputmode="decimal" placeholder="${sug && sug.w ? sug.w : bw?"BW":"lb"}" value="${esc(s.w)}" data-ex="${esc(name)}" data-i="${i}" data-k="w" aria-label="${esc(name)} set ${i+1} weight">
+        <input inputmode="decimal" placeholder="${(sets.slice(0,i).reverse().find(x=>x.w!=="")||{}).w || (sug && sug.w ? sug.w : bw?"BW":"lb")}" value="${esc(s.w)}" data-ex="${esc(name)}" data-i="${i}" data-k="w" aria-label="${esc(name)} set ${i+1} weight">
         <span class="x">×</span>
         <input inputmode="numeric" placeholder="${e.amrap&&!swapped?"max":esc(R.r)}" value="${esc(s.r)}" data-ex="${esc(name)}" data-i="${i}" data-k="r" aria-label="${esc(name)} set ${i+1} reps">
         <button class="done" data-ex="${esc(name)}" data-orig="${esc(e.n)}" data-i="${i}" data-sw="${sug && sug.w ? sug.w : ""}" aria-pressed="${!!s.done}" aria-label="Mark set ${i+1} done">${s.pr&&!isPregnant()?"PR":"✓"}</button>
@@ -1289,7 +1289,11 @@ document.addEventListener("click", e=>{
     const pi=progInfo(cur), P=dayDef(pi.dn), ex=P.ex.find(x=>x.n===t.dataset.orig);
     if(s.done){
       if(s.r===""){ if(ex && !(ex.amrap && name===ex.n)){ s.r=String(rx(ex,pi.week).r).replace(/^.*-/,""); } }
-      if(s.w==="" && t.dataset.sw) s.w = t.dataset.sw;
+      if(s.w===""){ // carry the weight from the set before (most people repeat it), else today's suggestion
+        const sets_ = D.lifts[name], i_ = +t.dataset.i;
+        const prevW = sets_.slice(0, i_).reverse().find(x=>x.w!=="");
+        if(prevW) s.w = prevW.w; else if(t.dataset.sw) s.w = t.dataset.sw;
+      }
       if(ex){ D.rx = D.rx || {}; D.rx[name] = String(rx(ex,pi.week).r); }
       // personal record? (needs a previous best to beat)
       const prev = bestE1(name, cur), today = Math.max(0, ...D.lifts[name].filter(x=>x!==s).map(x=>CO.e1rm(num(x.w), num(x.r))));
