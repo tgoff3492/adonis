@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Adonis</title>
 <meta name="theme-color" content="#ECEEEA" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1A2535" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#21324A" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -18,7 +18,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,800&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#ECEEEA; --surface:#FFFFFF; --ink:#1F2D41; --muted:#5E6A78; --line:#D3D8D1; --field:#F5F6F3;
+  --bg:#ECEEEA; --surface:#FFFFFF; --ink:#263A56; --muted:#5E6A78; --line:#D3D8D1; --field:#F5F6F3;
   --protein:#C23B2E; --carbs:#2766B0; --fat:#C99414; --cal:#2E8B57; --focus:#2766B0;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -29,13 +29,13 @@
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --bg:#1A2535; --surface:#233042; --ink:#E7EAE4; --muted:#95A1AE; --line:#334256; --field:#2B394C;
-    --protein:#E0604F; --carbs:#5B94DA; --fat:#E2B43A; --cal:#4DB07A; --focus:#7FB0EC;
+    --bg:#21324A; --surface:#2A3D57; --ink:#E7EAE4; --muted:#A3AEBA; --line:#3A4F6B; --field:#324661;
+    --protein:#E0604F; --carbs:#7CAAE2; --fat:#E2B43A; --cal:#4DB07A; --focus:#7FB0EC;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#1A2535; --surface:#233042; --ink:#E7EAE4; --muted:#95A1AE; --line:#334256; --field:#2B394C;
-  --protein:#E0604F; --carbs:#5B94DA; --fat:#E2B43A; --cal:#4DB07A; --focus:#7FB0EC;
+  --bg:#21324A; --surface:#2A3D57; --ink:#E7EAE4; --muted:#A3AEBA; --line:#3A4F6B; --field:#324661;
+  --protein:#E0604F; --carbs:#7CAAE2; --fat:#E2B43A; --cal:#4DB07A; --focus:#7FB0EC;
 }
 *,*::before,*::after{box-sizing:inherit}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
@@ -355,7 +355,7 @@ body.focusing #rest{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 @media (prefers-reduced-motion:reduce){#rest.go{animation:none}}
 #toast.win{background:var(--cal);color:#fff;font-size:17px;padding:12px 18px}
 #confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:69}
-#toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:70;background:var(--fat);color:#1F2D41;font-weight:700;border-radius:24px;padding:10px 16px;box-shadow:0 6px 20px rgba(0,0,0,.25);width:max-content;max-width:min(92vw,420px);text-align:center}
+#toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:70;background:var(--fat);color:#263A56;font-weight:700;border-radius:24px;padding:10px 16px;box-shadow:0 6px 20px rgba(0,0,0,.25);width:max-content;max-width:min(92vw,420px);text-align:center}
 .set .done{font-weight:700}
 
 .recap{background:var(--ink);color:var(--bg);border-radius:12px;padding:14px 16px;margin:14px 0 6px}
@@ -457,10 +457,10 @@ body.resting .wrap{padding-bottom:200px}
 .xbtn{border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer;padding:4px 6px}
 .field select{width:100%;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--ink);font:inherit}
 /* ---------- startup splash ---------- */
-#home{position:fixed;inset:0;z-index:50;background:#1F2D41;color:#ECEEEA;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:env(safe-area-inset-top,0px) 24px env(safe-area-inset-bottom,0px);text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#home{position:fixed;inset:0;z-index:50;background:#263A56;color:#ECEEEA;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:env(safe-area-inset-top,0px) 24px env(safe-area-inset-bottom,0px);text-align:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
 #home .logo{width:min(44vw,190px);height:auto;display:block;opacity:0;transform:translateY(8px)}
 #home h1{margin:8px 0 150px .22em;font:800 52px/1 var(--display);letter-spacing:.22em;text-transform:uppercase;opacity:0}
-#home .load{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);width:130px;height:4px;border-radius:2px;background:#35465F;overflow:hidden;opacity:0}
+#home .load{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 90px);width:130px;height:4px;border-radius:2px;background:#3C5375;overflow:hidden;opacity:0}
 #home .load i{display:block;height:100%;width:0;background:#C23B2E}
 #home .slam{position:absolute;left:0;right:0;top:61%;margin:0;font:italic 800 clamp(40px,12vw,56px)/.95 var(--display);text-transform:uppercase;color:#ECEEEA;opacity:0;white-space:nowrap}
 #home .slam b{color:#C23B2E}
