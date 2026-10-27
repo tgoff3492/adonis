@@ -54,17 +54,35 @@ function sideJoints(p) {
 
 /* ---------- front view: the person faces you ---------- */
 function frontJoints(p) {
-  const cx = p.cx ?? 120, hy = p.hip ?? 69, sw = 15, hw = 8;
-  const shY = hy - L.torso;
+  const cx = p.cx ?? 120, hy = p.hip ?? 69, sw = 16, hw = 9;
+  const shY = hy - L.torso + 3;                 // shoulder joints sit just below the top of the torso
   let J = {
-    hipL: [cx - hw, hy], hipR: [cx + hw, hy], shL: [cx - sw, shY], shR: [cx + sw, shY], mid: [cx, hy], neck: [cx, shY],
-    head: [cx, shY - L.neck - L.head],
+    hipL: [cx - hw, hy], hipR: [cx + hw, hy], shL: [cx - sw, shY], shR: [cx + sw, shY], mid: [cx, hy], neck: [cx, hy - L.torso],
+    head: [cx, hy - L.torso - L.neck - L.head],
+    // body outline: shoulders, chest, waist, hips
+    oSL: [cx - sw - 3, shY - 2], oSR: [cx + sw + 3, shY - 2], oCL: [cx - sw + 1, shY + 14], oCR: [cx + sw - 1, shY + 14],
+    oWL: [cx - 11, hy - 12], oWR: [cx + 11, hy - 12], oHL: [cx - 12, hy + 3], oHR: [cx + 12, hy + 3],
   };
-  const hl = p.hl || [cx - sw - 3, shY + 51.8], hr = p.hr || [cx + sw + 3, shY + 51.8];
+  // arms: either a hand target (IK) or an angle from hanging (0) to straight out (90) to overhead (180).
+  // plane "h": the arm swings in front of you (seen end-on), so it looks shorter as it points at you.
+  const reach = L.ua + L.fa - 2;
+  const arm = (side, sh, ang, target, eb) => {
+    const sx = side < 0 ? -1 : 1;
+    if (ang == null && !target) ang = 7;
+    if (ang != null) {
+      const a = rad(ang);
+      if (p.plane === "h") { const hand = [sh[0] + sx * reach * Math.sin(a), sh[1] + (p.ay ?? 6)]; return [[(sh[0] + hand[0]) / 2, (sh[1] + hand[1]) / 2], hand]; }
+      const d1 = [sx * Math.sin(a), Math.cos(a)], a2 = rad(ang + 4), d2 = [sx * Math.sin(a2), Math.cos(a2)];
+      const el = [sh[0] + L.ua * d1[0], sh[1] + L.ua * d1[1]];
+      return [el, [el[0] + L.fa * d2[0], el[1] + L.fa * d2[1]]];
+    }
+    const r = ik(sh[0], sh[1], target[0], target[1], L.ua, L.fa, eb);
+    return [[r[0], r[1]], [r[2], r[3]]];
+  };
+  const [elL, hdL] = arm(-1, J.shL, p.aL, p.hl, p.ebl ?? -1), [elR, hdR] = arm(1, J.shR, p.aR, p.hr, p.ebr ?? 1);
   const al = p.al || [cx - hw - 2, hy + 69.8], ar = p.ar || [cx + hw + 2, hy + 69.8];
-  const A1 = ik(J.shL[0], J.shL[1], hl[0], hl[1], L.ua, L.fa, p.ebl ?? -1), A2 = ik(J.shR[0], J.shR[1], hr[0], hr[1], L.ua, L.fa, p.ebr ?? 1);
   const L1 = ik(J.hipL[0], J.hipL[1], al[0], al[1], L.th, L.sh, p.kbl ?? 1), L2 = ik(J.hipR[0], J.hipR[1], ar[0], ar[1], L.th, L.sh, p.kbr ?? -1);
-  Object.assign(J, { elL: [A1[0], A1[1]], hdL: [A1[2], A1[3]], elR: [A2[0], A2[1]], hdR: [A2[2], A2[3]],
+  Object.assign(J, { elL, hdL, elR, hdR,
     knL: [L1[0], L1[1]], anL: [L1[2], L1[3]], knR: [L2[0], L2[1]], anR: [L2[2], L2[3]] });
   J.toeL = [J.anL[0] - 7, J.anL[1] + 1]; J.toeR = [J.anR[0] + 7, J.anR[1] + 1];
   if (p.rot) {   // tip the whole body over (side plank, lying on your side)
@@ -90,6 +108,7 @@ function drawProp(pr, J) {
     case "plate": { const c = at(J, pr.at, pr.dx, pr.dy); return `<circle class="dp-load" cx="${f1(c[0])}" cy="${f1(c[1])}" r="${pr.r || 11}"/><circle class="dp-hole" cx="${f1(c[0])}" cy="${f1(c[1])}" r="2.5"/>`; }
     case "ball": { const c = at(J, pr.at, pr.dx, pr.dy); return `<circle class="dp-load" cx="${f1(c[0])}" cy="${f1(c[1])}" r="${pr.r || 9}"/>`; }
     case "db": { const c = at(J, pr.at, pr.dx, pr.dy), v = pr.v;   // v: drawn upright
+      if (pr.sq) return `<rect class="dp-load" x="${f1(c[0] - 5)}" y="${f1(c[1] - 5)}" width="10" height="10" rx="2.5"/>`;
       return v ? `<rect class="dp-load" x="${f1(c[0] - 3.5)}" y="${f1(c[1] - 9)}" width="7" height="18" rx="2.5"/>`
                : `<rect class="dp-load" x="${f1(c[0] - 9)}" y="${f1(c[1] - 3.5)}" width="18" height="7" rx="2.5"/>`; }
     case "bar": { const c = at(J, pr.at, pr.dx, pr.dy), w = pr.w || 26; return `<line class="dp-loads" x1="${f1(c[0] - w / 2)}" y1="${f1(c[1])}" x2="${f1(c[0] + w / 2)}" y2="${f1(c[1])}" stroke-width="4"/>`; }
@@ -117,8 +136,8 @@ function drawFront(J, props) {
   const front = (props || []).filter(p => p.front).map(p => drawProp(p, J)).join("");
   return back
     + poly([J.hipL, J.knL, J.anL, J.toeL], 8, "dp-limb") + poly([J.hipR, J.knR, J.anR, J.toeR], 8, "dp-limb")
-    + `<polygon class="dp-torso" points="${[J.shL, J.shR, J.hipR, J.hipL].map(p => `${f1(p[0])},${f1(p[1])}`).join(" ")}"/>`
-    + `<circle class="dp-head" cx="${f1(J.head[0])}" cy="${f1(J.head[1])}" r="${L.head}"/>`
+    + `<polygon class="dp-torso" points="${[J.oSL, J.oSR, J.oCR, J.oWR, J.oHR, J.oHL, J.oWL, J.oCL].map(p => `${f1(p[0])},${f1(p[1])}`).join(" ")}"/>`
+    + seg(J.neck, J.head, 7, "dp-limb") + `<circle class="dp-head" cx="${f1(J.head[0])}" cy="${f1(J.head[1])}" r="${L.head}"/>`
     + poly([J.shL, J.elL, J.hdL], 7, "dp-limb") + poly([J.shR, J.elR, J.hdR], 7, "dp-limb") + front;
 }
 
@@ -264,7 +283,7 @@ T.situp = () => ({
 T.heelslide = () => ({ A: { hip: [100, 130], t: -90, an: [134, G], kb: -1, hand: [102, 136] }, B: { hip: [100, 130], t: -90, an: [168, G], kb: -1, hand: [102, 136] } });
 T.kneeraise = () => ({
   A: { hip: [120, 66], t: 0, an: [120, 135], hand: [120, -36], eb: 1 },
-  B: { hip: [118, 64], t: -6, an: [152, 98], kb: 1, ft: 30, hand: [120, -36], eb: 1 },
+  B: { hip: [118, 64], t: -6, an: [152, 98], kb: -1, ft: 30, hand: [120, -36], eb: 1 },
   props: [{ k: "line", a: [80, -38], b: [160, -38], w: 4 }],
 });
 T.cablecrunch = () => ({
@@ -415,15 +434,15 @@ T.bridgebreath = () => ({ A: { hip: [86, 131], t: -90, an: [126, G], kb: -1, han
 // front-view templates
 const FV = (A, B, props) => ({ view: "front", A, B, props });
 T.latraise = (o = {}) => o.cable
-  ? FV({ hr: [137, 104], ebr: 1 }, { hr: [180, 22], ebr: 1 }, [{ k: "cable", from: [88, 134], to: "hdR" }, { k: "pad", at: "hdR", r: 3, front: true }])
-  : FV({ hl: [102, 74], hr: [138, 74] }, { hl: [54, 28], hr: [186, 28] }, o.band ? [{ k: "band", from: [114, 140], to: "hdL" }, { k: "band", from: [126, 140], to: "hdR" }] : [{ k: "db", at: "hdL", v: 0, front: true }, { k: "db", at: "hdR", v: 0, front: true }]);
-T.fly = (o = {}) => FV({ hl: [70, 12], hr: [170, 12], ebl: 1, ebr: -1 }, { hl: [114, 46], hr: [126, 46], ebl: 1, ebr: -1 },
-  o.band ? [{ k: "band", from: [36, 26], to: "hdL" }, { k: "band", from: [204, 26], to: "hdR" }] : [{ k: "cable", from: [34, -10], to: "hdL" }, { k: "cable", from: [206, -10], to: "hdR" }]);
-T.pullapart = () => FV({ hl: [112, 30], hr: [128, 30], ebl: 1, ebr: -1 }, { hl: [54, 30], hr: [186, 30], ebl: 1, ebr: -1 }, [{ k: "seg", a: "hdL", b: "hdR", w: 2.5 }]);
-T.uprow = () => FV({ hl: [114, 72], hr: [126, 72], ebl: -1, ebr: 1 }, { hl: [114, 28], hr: [126, 28], ebl: 1, ebr: -1 }, [{ k: "db", at: "hdL", v: 1, front: true }, { k: "db", at: "hdR", v: 1, front: true }]);
-T.latwalk = () => FV({ al: [104, G], ar: [128, G] }, { al: [92, G], ar: [148, G], cx: 122 }, [{ k: "seg", a: "knL", b: "knR", w: 2.2 }]);
-T.abduction = () => FV({ hl: [92, 40], ebl: 1 }, { hl: [92, 40], ebl: 1, ar: [166, 122], kbr: -1 }, [{ k: "line", a: [80, -10], b: [80, G], w: 4 }, { k: "cable", from: [200, 134], to: "anR" }]);
-T.jacks = () => FV({ al: [112, G], ar: [128, G], hl: [104, 72], hr: [136, 72] }, { al: [88, G], ar: [152, G], hl: [86, -22], hr: [154, -22], ebl: 1, ebr: -1 });
+  ? FV({ aR: -14 }, { aR: 86 }, [{ k: "cable", from: [84, 134], to: "hdR" }, { k: "pad", at: "hdR", r: 3, front: true }])
+  : FV({ aL: 9, aR: 9 }, { aL: 86, aR: 86 }, o.band ? [{ k: "band", from: [112, 140], to: "hdL" }, { k: "band", from: [128, 140], to: "hdR" }] : [{ k: "db", at: "hdL", sq: 1, front: true }, { k: "db", at: "hdR", sq: 1, front: true }]);
+T.fly = (o = {}) => FV({ plane: "h", aL: 84, aR: 84, ay: -2 }, { plane: "h", aL: 20, aR: 20, ay: 10 },
+  o.band ? [{ k: "band", from: [30, 24], to: "hdL" }, { k: "band", from: [210, 24], to: "hdR" }] : [{ k: "cable", from: [28, -10], to: "hdL" }, { k: "cable", from: [212, -10], to: "hdR" }]);
+T.pullapart = () => FV({ plane: "h", aL: 12, aR: 12, ay: 6 }, { plane: "h", aL: 86, aR: 86, ay: 6 }, [{ k: "seg", a: "hdL", b: "hdR", w: 2.5 }]);
+T.uprow = () => FV({ hl: [112, 76], hr: [128, 76], ebl: 1, ebr: -1 }, { hl: [112, 32], hr: [128, 32], ebl: 1, ebr: -1 }, [{ k: "db", at: "hdL", v: 1, front: true }, { k: "db", at: "hdR", v: 1, front: true }]);
+T.latwalk = () => FV({ al: [104, G], ar: [128, G], cx: 116 }, { al: [92, G], ar: [148, G], cx: 122 }, [{ k: "seg", a: "knL", b: "knR", w: 2.2 }]);
+T.abduction = () => FV({ hl: [84, 40], ebl: 1, ar: [131, 138.8], kbr: -1 }, { hl: [84, 40], ebl: 1, ar: [166, 122], kbr: -1 }, [{ k: "line", a: [80, -10], b: [80, G], w: 4 }, { k: "cable", from: [200, 134], to: "anR" }]);
+T.jacks = () => FV({ al: [112, G], ar: [128, G], aL: 8, aR: 8 }, { al: [88, G], ar: [152, G], aL: 160, aR: 160 });
 T.clam = () => ({ view: "front", A: { hip: 69, rot: -90, piv: [100, 128], al: [78, 96], ar: [82, 96], kbl: 1, kbr: 1, hl: [130, 30], hr: [130, 30] }, B: { hip: 69, rot: -90, piv: [100, 128], al: [78, 96], ar: [92, 70], kbl: 1, kbr: -1, hl: [130, 30], hr: [130, 30] } });
 
 /* ---------- which template each exercise uses ---------- */
@@ -552,8 +571,28 @@ function demoFor(name) {
 
 /* ---------- render + animate ---------- */
 const ease = k => 0.5 - 0.5 * Math.cos(Math.PI * k);
+/* spell out every setting in a frame (hands and feet as positions) so start and finish blend smoothly */
+function normSide(p) {
+  const J = sideJoints(p);
+  const ft = p.ft ?? 0, kb = p.kb ?? -1, eb = p.eb ?? 1;
+  return { hip: p.hip, t: p.t || 0, hd: p.hd || 0, hand: J.hand, hand2: J.hand2, an: J.ankle, an2: J.ankle2,
+    ft, ft2: p.ft2 ?? ft, kb, kb2: p.kb2 ?? kb, eb, eb2: p.eb2 ?? eb };
+}
+function normFront(p) {
+  const o = { cx: p.cx ?? 120, hip: p.hip ?? 69, ebl: p.ebl ?? -1, ebr: p.ebr ?? 1, kbl: p.kbl ?? 1, kbr: p.kbr ?? -1, ay: p.ay ?? 6, plane: p.plane, rot: p.rot || 0, piv: p.piv };
+  const J = frontJoints(p);
+  o.al = J.anL; o.ar = J.anR;
+  if (p.hl) o.hl = p.hl; else o.aL = p.aL ?? 7;
+  if (p.hr) o.hr = p.hr; else o.aR = p.aR ?? 7;
+  return o;
+}
+function frames(d) {
+  if (!d.nA) { const n = d.view === "front" ? normFront : normSide; d.nA = n(d.A); d.nB = n(d.B); }
+  return [d.nA, d.nB];
+}
 function frameSVG(d, k) {
-  const p = mix(d.A, d.B, k);
+  const [A, B] = frames(d);
+  const p = mix(A, B, k);
   return d.view === "front" ? drawFront(frontJoints(p), d.props) : drawSide(sideJoints(p), d.props);
 }
 /* frame each movement tightly: bounds over the whole motion, padded to a 16:9 box */
@@ -562,7 +601,7 @@ function bounds(d) {
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = G + 3;
   const add = (x, y, r) => { r = r || 0; x0 = Math.min(x0, x - r); y0 = Math.min(y0, y - r); x1 = Math.max(x1, x + r); y1 = Math.max(y1, y + r); };
   for (const k of [0, 0.25, 0.5, 0.75, 1]) {
-    const p = mix(d.A, d.B, k), J = d.view === "front" ? frontJoints(p) : sideJoints(p);
+    const [nA, nB] = frames(d), p = mix(nA, nB, k), J = d.view === "front" ? frontJoints(p) : sideJoints(p);
     for (const key in J) { const pt = J[key]; if (key === "shb" || key === "shf") continue; add(pt[0], pt[1], key === "head" ? L.head + 1 : 5); }
     (d.props || []).forEach(pr => {
       if (pr.k === "rect") { add(pr.x, pr.y); add(pr.x + pr.w, pr.y + pr.h); }
