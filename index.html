@@ -280,6 +280,8 @@ details.cue .fdemo{margin:8px 0 6px}
 .dp-body,.dp-limb{stroke:var(--ink);stroke-linecap:round;stroke-linejoin:round;fill:none}
 .dp-far{stroke:var(--muted);opacity:.5;stroke-linecap:round;stroke-linejoin:round;fill:none}
 .dp-head{fill:var(--ink)}
+.dp-halo{stroke:var(--surface);stroke-linecap:round;stroke-linejoin:round;fill:none}
+.dp-fist{fill:var(--ink);stroke:var(--surface);stroke-width:2}
 .dp-torso{fill:var(--ink);stroke:var(--ink);stroke-width:6;stroke-linejoin:round}
 .dp-eq{fill:var(--line)}
 .dp-eqs{stroke:var(--line);stroke-linecap:round}
@@ -380,7 +382,14 @@ body.resting .wrap{padding-bottom:200px}
 .moves li{margin:4px 0}
 
 .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
-.wordmark{font:700 15px var(--display);letter-spacing:.22em;color:var(--muted)}
+.wordmark{font:800 17px/1 var(--display);letter-spacing:.24em;color:var(--ink)}
+.brand{display:inline-flex;align-items:center;gap:9px}
+.brand .mark{width:34px;height:27px;color:var(--ink);flex:none}
+.mark-sm{width:26px;height:21px;color:var(--ink);flex:none;display:block}
+.sheetbrand{display:flex;flex-direction:column;align-items:center;gap:6px;margin:6px 0 18px}
+.sheetbrand .mark{width:64px;height:51px;color:var(--ink)}
+.sheetbrand .wordmark{font-size:22px}
+#builder .top:has(+ .sheetbrand) .mark-sm{display:none}
 .iconbtn.person{width:38px;height:38px}
 .menu-list{display:grid;gap:10px;margin-top:12px}
 .menu-item{display:flex;gap:12px;align-items:center;width:100%;text-align:left;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;font:600 17px var(--body)}
@@ -484,6 +493,16 @@ body.on-home{overflow:hidden}
 </style>
 </head>
 <body class="on-home">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+  <symbol id="adonis-mark" viewBox="150 330 724 572">
+    <clipPath id="am-clip"><rect x="0" y="0" width="1024" height="852"/></clipPath>
+    <path clip-path="url(#am-clip)" d="M300 912 L512 352 L724 912" fill="none" stroke="currentColor" stroke-width="128" stroke-linejoin="miter" stroke-miterlimit="10"/>
+    <rect x="200" y="650" width="624" height="34" rx="6" fill="currentColor"/>
+    <rect x="214" y="562" width="52" height="210" rx="10" fill="#C23B2E"/>
+    <rect x="166" y="597" width="40" height="140" rx="9" fill="#C23B2E"/>
+    <rect x="758" y="562" width="52" height="210" rx="10" fill="#C23B2E"/>
+    <rect x="818" y="597" width="40" height="140" rx="9" fill="#C23B2E"/>
+  </symbol></defs></svg>
 <section id="home" aria-label="Welcome. Tap to skip.">
   <svg class="logo" viewBox="140 270 744 600" role="img" aria-label="Adonis logo">
     <g transform="translate(0 52)">
@@ -503,7 +522,7 @@ body.on-home{overflow:hidden}
 </section>
 <div class="wrap">
   <header>
-    <div class="topbar"><span class="wordmark">ADONIS</span><button class="iconbtn person" id="menu" aria-label="Your account and settings" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 20.5c1.6-3.6 4.6-5.5 8-5.5s6.4 1.9 8 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <div class="topbar"><span class="brand" aria-label="Adonis"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></span><button class="iconbtn person" id="menu" aria-label="Your account and settings" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 20.5c1.6-3.6 4.6-5.5 8-5.5s6.4 1.9 8 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     <div class="datebar">
       <button class="iconbtn" id="prev" aria-label="Previous day">‹</button>
       <h1 id="dtitle">Today<small id="dsub"></small></h1>
@@ -1562,7 +1581,7 @@ function renderBuilder(){
     body = `<div class="opts" role="${q.multi?"group":"radiogroup"}">${optsOf(q).map(([v,l,sub])=>`<button class="opt${q.multi?"":" single"}" data-opt="${esc(v)}" aria-pressed="${sel(v)}" role="${q.multi?"checkbox":"radio"}" aria-checked="${sel(v)}"><span class="box">${sel(v)?"✓":""}</span><span>${esc(l)}${sub?`<small>${esc(sub)}</small>`:""}</span></button>`).join("")}</div>`;
   }
   el.innerHTML = `<div class="in">
-    <div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div><span class="sub" style="margin:0">${bi+1} of ${qs.length}</span></div>
+    <div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><svg class="mark-sm" aria-hidden="true"><use href="#adonis-mark"/></svg><div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div><span class="sub" style="margin:0">${bi+1} of ${qs.length}</span></div>
     <h2>${esc(typeof q.t==="function" ? q.t(F.a) : q.t)}</h2>${(q.subf ? q.subf(F.a) : q.sub)?`<p class="sub">${esc(q.subf ? q.subf(F.a) : q.sub)}</p>`:""}
     ${body}
     <div class="err" id="berr" role="alert"></div></div>
@@ -1603,7 +1622,7 @@ function next(){
 }
 function sumShell(el, title, sub, inner, startLabel){
   el.innerHTML = `<div class="in">
-    <div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><div class="bar"><i style="width:100%"></i></div></div>
+    <div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><svg class="mark-sm" aria-hidden="true"><use href="#adonis-mark"/></svg><div class="bar"><i style="width:100%"></i></div></div>
     <h2>${esc(title)}</h2>${sub?`<p class="sub">${esc(sub)}</p>`:""}${inner}</div>
     <div class="bnav"><div class="in2"><button data-b="back">Change answers</button><button class="next" data-b="start">${esc(startLabel)}</button></div></div>`;
   el.scrollTop = 0;
@@ -1829,7 +1848,7 @@ function initCarousel(){
 }
 function openSheet(title, inner){
   const el = $("#builder");
-  el.innerHTML = `<div class="in"><div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><h2 style="margin:0;flex:1">${esc(title)}</h2></div>${inner}</div>`;
+  el.innerHTML = `<div class="in"><div class="top"><button class="iconbtn" data-b="close" aria-label="Close">✕</button><h2 style="margin:0;flex:1">${esc(title)}</h2><svg class="mark-sm" aria-hidden="true"><use href="#adonis-mark"/></svg></div>${inner}</div>`;
   F = {qs:[], a:{}}; el.hidden = false; document.body.classList.add("on-home"); el.scrollTop = 0;
 }
 function targetsForDay(i){ return targetsOn(addDays(S.mealplan.week.start, i)); }
@@ -2096,7 +2115,7 @@ function renderFocus(){
   const finished = ci < 0;
   const doneBox = finished ? `<div class="fdone"><b>${isLast ? "That's the last one" : "Exercise done"}</b>${isLast ? (D.complete ? "Workout finished. Nice work." : `Tap Finish workout to wrap up.${others?` Your plan also has ${others===1?"one more item":`${others} more items`} to log on the list view.`:""}`) : `Up next: ${esc(next.name)}.`}</div>` : "";
   el.innerHTML = `<div class="fwrap"><div class="fin">
-      <div class="ftop"><button class="iconbtn" data-fclose aria-label="Back to the list">✕</button>
+      <div class="ftop"><button class="iconbtn" data-fclose aria-label="Back to the list">✕</button><svg class="mark-sm" aria-hidden="true"><use href="#adonis-mark"/></svg>
         <div class="fprog" role="progressbar" aria-label="Sets done" aria-valuenow="${done}" aria-valuemin="0" aria-valuemax="${total}"><i style="width:${total?Math.round(done/total*100):0}%"></i></div>
         <span class="fcount">${FOCUS.i+1} of ${L.length}</span></div>
       <div class="fkick">${esc(dayDef(progInfo(cur).dn).name)}${e.pair||(e.tag&&/[ab]$/.test(e.tag))?" · Superset":""}</div>
@@ -2275,9 +2294,9 @@ function checkBodyWins(d, what){
 
 /* ---------- account menu: reset plans, send feedback ---------- */
 const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
-const APP_VERSION = "2026.10.26";   // bump with the cache VERSION in sw.js on every release
+const APP_VERSION = "2026.10.27";   // bump with the cache VERSION in sw.js on every release
 function openMenu(){
-  openSheet("Your Adonis", `<div class="menu-list">
+  openSheet("Your Adonis", `<div class="sheetbrand"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></div><div class="menu-list">
     <button class="menu-item" data-menu="feedback"><span>Send feedback<small>Tell us what's working and what isn't</small></span></button>
     <button class="menu-item" data-menu="backup"><span>Save a backup<small>${S.settings.lastBackup?`Last backup: ${esc(parse(S.settings.lastBackup).toLocaleDateString(undefined,{month:"short",day:"numeric"}))}`:"No backup yet"}</small></span></button>
     <button class="menu-item" data-menu="restore"><span>Restore from backup<small>Load a backup file, like when you get a new phone</small></span></button>
