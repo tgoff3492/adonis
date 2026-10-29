@@ -1,5 +1,5 @@
 // Adonis offline cache. Bump VERSION whenever you upload a new index.html.
-const VERSION = "adonis-v27";
+const VERSION = "adonis-v28";
 const CORE = ["./", "index.html", "engine.js", "nutrition.js", "meals.js", "foods.js", "coach.js", "demos.js", "vendor/zxing.min.js", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE)).then(() => self.skipWaiting()));
