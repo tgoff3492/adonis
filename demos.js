@@ -613,6 +613,34 @@ const FV = (A, B, props) => ({ view: "front", A, B, props });
 T.latraise = (o = {}) => o.cable
   ? FV({ aR: -14 }, { aR: 86 }, [{ k: "cable", from: [84, 134], to: "hdR" }, { k: "pad", at: "hdR", r: 3, front: true }])
   : FV({ aL: 9, aR: 9 }, { aL: 86, aR: 86 }, o.band ? [{ k: "band", from: [112, 140], to: "hdL" }, { k: "band", from: [128, 140], to: "hdR" }] : [{ k: "db", at: "hdL", sq: 1, front: true }, { k: "db", at: "hdR", sq: 1, front: true }]);
+// cable fly, seen from above (facing up the screen): the only angle that shows both cables and the hugging arc of the arms
+T.flyTop = () => {
+  const ln = (a, b, w, cls) => `<line class="${cls}" x1="${f1(a[0])}" y1="${f1(a[1])}" x2="${f1(b[0])}" y2="${f1(b[1])}" stroke-width="${w}"/>`;
+  const pl = (pts, w, cls) => `<polyline class="${cls}" points="${pts.map(q => `${f1(q[0])},${f1(q[1])}`).join(" ")}" stroke-width="${w}" fill="none"/>`;
+  const shL = [111, 78], shR = [149, 78], stL = [40, 96], stR = [220, 96];   // shoulders; cable stacks out to each side, a step behind you
+  const BEND = 20;                                                            // the elbows keep the same soft bend the whole rep
+  // th: upper arm angle from straight ahead (0) to out to the side (90), slightly past it at the stretch
+  const armAt = (sh, sx, th) => {
+    const a = rad(th), b = rad(th - BEND);
+    const el = [sh[0] + sx * L.ua * Math.sin(a), sh[1] - L.ua * Math.cos(a)];
+    return [el, [el[0] + sx * L.fa * Math.sin(b), el[1] - L.fa * Math.cos(b)]];
+  };
+  const custom = k => {
+    const th = 96 + (-8 - 96) * k;                                            // wide stretch → hands meet in front of the chest
+    const [elL, hdL] = armAt(shL, -1, th), [elR, hdR] = armAt(shR, 1, th);
+    const stack = c => `<rect class="dp-eq" x="${c[0] - 11}" y="${c[1] - 11}" width="22" height="22" rx="3"/>`;
+    return stack(stL) + stack(stR)
+      + ln([121, 74], [121, 57], 8, "dp-far") + ln([139, 101], [139, 84], 8, "dp-far")   // staggered stance: one foot forward
+      + `<rect class="dp-torso" x="105" y="66" width="50" height="24" rx="12"/>`            // shoulders and back from above
+      + `<circle class="dp-fist" cx="130" cy="78" r="10.5"/>`                               // top of the head
+      + ln(stL, hdL, 1.5, "dp-cable") + ln(stR, hdR, 1.5, "dp-cable")
+      + pl([elL, hdL], 10.5, "dp-halo") + pl([elR, hdR], 10.5, "dp-halo")
+      + pl([shL, elL, hdL], 7, "dp-limb") + pl([shR, elR, hdR], 7, "dp-limb")
+      + `<circle class="dp-fist" cx="${f1(hdL[0])}" cy="${f1(hdL[1])}" r="4.5"/><circle class="dp-fist" cx="${f1(hdR[0])}" cy="${f1(hdR[1])}" r="4.5"/>`;
+  };
+  return { custom, box: [24, -2, 212, 119.3], A: {}, B: {},
+    cap: "Seen from above. Keep the same soft bend in your elbows and sweep your hands together in front of your chest, like hugging a big tree." };
+};
 T.fly = (o = {}) => FV({ plane: "h", aL: 84, aR: 84, ay: -2 }, { plane: "h", aL: 20, aR: 20, ay: 10 },
   o.band ? [{ k: "band", from: [30, 24], to: "hdL" }, { k: "band", from: [210, 24], to: "hdR" }] : [{ k: "cable", from: [28, -10], to: "hdL" }, { k: "cable", from: [212, -10], to: "hdR" }]);
 T.pullapart = () => FV({ plane: "h", aL: 12, aR: 12, ay: 6 }, { plane: "h", aL: 86, aR: 86, ay: 6 }, [{ k: "seg", a: "hdL", b: "hdR", w: 2.5 }]);
@@ -689,7 +717,7 @@ const MAP = [
   [/Pallof/, n => T.pallof({ cable: /Cable/.test(n) })],
   [/Isometric Palm Press/, () => T.pressfwd({})],
   [/Banded Chest Fly/, () => T.fly({ band: 1 })],
-  [/Cable\/Machine Fly/, () => T.fly({})],
+  [/Cable\/Machine Fly/, () => T.flyTop()],
   [/Pike Push Up/, () => T.pushup({ pike: 1 })],
   [/Decline Push Up/, () => T.pushup({ decline: 1 })],
   [/Wall Push Up/, () => T.pushup({ wall: 1 })],
