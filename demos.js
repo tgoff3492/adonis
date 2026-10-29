@@ -516,8 +516,10 @@ T.pressdown = (o = {}) => ({
   props: [o.band ? { k: "band", from: [150, -40], to: "hand" } : { k: "cable", from: [148, -40], to: "hand" }],
 });
 T.ohext = (o = {}) => ({
-  // upper arm stays pointed straight up beside the head; only the forearm moves, lowering the dumbbell behind the head
-  A: { ...BASE(o), er: [9, -25], fa: 116, halo: 1 }, B: { ...BASE(o), er: [9, -25], fa: 272, halo: 1 },
+  // upper arm stays fixed, pointing almost straight up beside the ear (elbow over the head, not in front of the face).
+  // Only the elbow bends: the dumbbell lowers BEHIND the head to about neck height, then presses back up in line with the arm.
+  // fa runs 132 → 274 (not 132 → -86) so the forearm swings back behind the head instead of forward over the face.
+  A: { ...BASE(o), er: [3, -26.8], fa: 132, halo: 1 }, B: { ...BASE(o), er: [3, -26.8], fa: 274, halo: 1 },
   props: [...seatProps(o), { k: "db", at: "hand", v: 1, front: true }],
 });
 T.dips = (o = {}) => o.bench ? {
