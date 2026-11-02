@@ -2731,7 +2731,15 @@ document.addEventListener("input", e=>{
 
 loadLocal();
 render();
-if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+if("serviceWorker" in navigator){
+  // when a new version takes over, reload once so the screen shows the new code (not on the very first install)
+  const hadSW = !!navigator.serviceWorker.controller; let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadSW && !reloaded) { reloaded = true; location.reload(); } });
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => {
+    // a home-screen app can sit in the background for days: check for an update whenever it comes back to the front
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") r.update().catch(()=>{}); });
+  }).catch(()=>{});
+}
 if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
 </script>
 </body>
