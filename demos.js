@@ -1,4 +1,4 @@
-/* Adonis exercise demos: a simple drawn figure that plays each movement.
+/* Adonis exercise demos: a filmed clip when videos.js lists one, otherwise a simple drawn figure that plays each movement.
    Original artwork made in code (no photos, nothing licensed). One figure system, ~40 movement templates,
    every exercise in the library maps to one. Shared by index.html; Node can load it for checks. */
 (function (root) {
@@ -1123,19 +1123,36 @@ function tick(now) {
   raf = running.size ? requestAnimationFrame(tick) : 0;
 }
 const reduced = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+/* Filmed clips (videos.js) win over the drawing. If a clip can't load (offline, missing file) the drawing takes over. */
+const vidFor = n => { const V = root.AdonisVideos; return V && Object.prototype.hasOwnProperty.call(V, n) ? "videos/" + V[n] : null; };
+const attr = s => String(s).replace(/[&"<>]/g, c => ({ "&": "&amp;", '"': "&quot;", "<": "&lt;", ">": "&gt;" })[c]);
+function fillOne(box) {
+  const name = box.dataset.demo, src = box.dataset.vidfail === name ? null : vidFor(name);
+  if (box.dataset.filled === name) {
+    const v = box.querySelector("video");
+    if (v) { if (!reduced() && v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); } }
+    else if (!reduced()) running.add(box);
+    return;
+  }
+  if (src) {
+    running.delete(box); box.hidden = false; box.dataset.filled = name;
+    box.innerHTML = `<video class="demo-vid" src="${attr(src)}" muted loop playsinline preload="metadata"${reduced() ? " controls" : " autoplay"} aria-label="${attr(name)} demo video"></video>`;
+    box.querySelector("video").addEventListener("error", () => { box.dataset.vidfail = name; delete box.dataset.filled; fillOne(box); kick(); });
+    return;
+  }
+  const d = demoFor(name);
+  if (!d) { box.innerHTML = ""; box.hidden = true; return; }
+  box.hidden = false; box.dataset.filled = name;
+  box.innerHTML = (reduced()
+    ? `<div class="demo-pair">${svg(name, 0)}${svg(name, 1)}</div><div class="demo-cap">Start and finish</div>`
+    : svg(name, 0)) + (d.cap ? `<div class="demo-cap">${d.cap}</div>` : "");
+  if (!reduced()) running.add(box);
+}
+function kick() { if (running.size && !raf && typeof requestAnimationFrame === "function") raf = requestAnimationFrame(tick); }
 /* fill every [data-demo] inside el that hasn't been filled yet */
 function fill(el) {
-  (el || document).querySelectorAll("[data-demo]").forEach(box => {
-    if (box.dataset.filled === box.dataset.demo) { if (!reduced()) running.add(box); return; }
-    const name = box.dataset.demo, d = demoFor(name);
-    if (!d) { box.innerHTML = ""; box.hidden = true; return; }
-    box.hidden = false; box.dataset.filled = name;
-    box.innerHTML = (reduced()
-      ? `<div class="demo-pair">${svg(name, 0)}${svg(name, 1)}</div><div class="demo-cap">Start and finish</div>`
-      : svg(name, 0)) + (d.cap ? `<div class="demo-cap">${d.cap}</div>` : "");
-    if (!reduced()) running.add(box);
-  });
-  if (running.size && !raf && typeof requestAnimationFrame === "function") raf = requestAnimationFrame(tick);
+  (el || document).querySelectorAll("[data-demo]").forEach(fillOne);
+  kick();
 }
-root.AdonisDemos = { has: n => !!demoFor(n), svg, fill, demoFor };
+root.AdonisDemos = { has: n => !!(vidFor(n) || demoFor(n)), svg, fill, demoFor, video: vidFor };
 })(typeof window !== "undefined" ? window : globalThis);

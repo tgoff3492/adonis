@@ -1,6 +1,6 @@
 // Adonis offline cache. Bump VERSION whenever you upload a new index.html.
-const VERSION = "adonis-v33";
-const CORE = ["./", "index.html", "engine.js", "nutrition.js", "meals.js", "foods.js", "coach.js", "demos.js", "vendor/zxing.min.js", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
+const VERSION = "adonis-v34";
+const CORE = ["./", "index.html", "engine.js", "nutrition.js", "meals.js", "foods.js", "coach.js", "videos.js", "demos.js", "vendor/zxing.min.js", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
 self.addEventListener("install", e => {
   // cache: "reload" skips the browser's own HTTP cache, so a new version never gets filled with yesterday's files
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE.map(u => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
@@ -13,6 +13,8 @@ self.addEventListener("fetch", e => {
   if (req.method !== "GET") return;
   // food lookups always go to the network (the app keeps its own copy of what you've scanned)
   if (new URL(req.url).hostname.endsWith("openfoodfacts.org")) return;
+  // exercise clips stream straight from the site (iPhone asks for them in pieces); offline, the drawn demo shows instead
+  if (new URL(req.url).pathname.includes("/videos/")) return;
   if (req.mode === "navigate") {
     // Network first for the page so updates show up; fall back to cache offline.
     e.respondWith(fetch(req).then(r => { const copy = r.clone(); caches.open(VERSION).then(c => c.put("index.html", copy)); return r; })
