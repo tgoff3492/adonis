@@ -128,6 +128,24 @@ details.notes ul{margin:6px 0 0;padding-left:18px}
 #builder .bar{flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
 #builder .bar i{display:block;height:100%;background:var(--protein);transition:width .25s}
 #builder h2{font:700 28px/1.1 var(--display);margin:18px 0 6px}
+#auth{position:fixed;inset:0;z-index:45;background:var(--bg);overflow-y:auto;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+#auth .in{max-width:440px;margin:0 auto;padding:28px 18px 60px}
+#auth h2{font:700 30px/1.1 var(--display);margin:6px 0 6px;text-align:center}
+#auth .sub{text-align:center}
+#auth form .field{margin-bottom:12px}
+#auth .field input,.acct .field input{font-size:17px;padding:12px}
+#auth .alt{display:block;margin:16px auto 0;border:0;background:none;color:var(--carbs);font:600 15px var(--body);cursor:pointer;padding:8px}
+#auth .note{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:14px;color:var(--muted);margin-top:18px}
+#auth .ok{color:var(--cal);font-size:14px;min-height:20px;margin-top:8px}
+#auth .spin{width:34px;height:34px;margin:30px auto 10px;border:4px solid var(--line);border-top-color:var(--protein);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.acct-card{display:flex;align-items:center;gap:12px}
+.avatar{width:48px;height:48px;flex:none;border-radius:50%;background:var(--ink);color:var(--bg);display:grid;place-items:center;font:700 22px var(--display)}
+.acct-card b{display:block;font-size:17px}
+.acct-card small{color:var(--muted);font-size:14px;word-break:break-all}
+.syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--cal);margin-right:6px;vertical-align:1px}
+.syncdot.off{background:var(--fat)}.syncdot.err{background:var(--protein)}
+.acct h3{font:700 20px var(--display);margin:22px 0 8px}
 .opts{display:grid;gap:10px;margin-top:16px}
 .opt{display:flex;align-items:center;gap:12px;text-align:left;width:100%;padding:16px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;font:500 17px/1.3 var(--body)}
 .opt small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
@@ -577,6 +595,7 @@ body.on-home{overflow:hidden}
   <main id="main"></main>
 </div>
 <section id="builder" hidden aria-label="Build my plan"></section>
+<section id="auth" hidden aria-label="Sign in to Adonis"></section>
 <section id="scanner" hidden aria-label="Barcode scanner">
   <video id="scanvid" playsinline muted autoplay></video>
   <div class="scanframe" aria-hidden="true"></div>
@@ -595,6 +614,9 @@ body.on-home{overflow:hidden}
   <button role="tab" data-tab="body" aria-selected="false">Body</button>
 </div></nav>
 
+<script src="firebase-config.js"></script>
+<script src="vendor/firebase.js"></script>
+<script src="cloud.js"></script>
 <script src="engine.js"></script>
 <script src="nutrition.js"></script>
 <script src="meals.js"></script>
@@ -608,6 +630,7 @@ const RECOVERY = ["Walking","Yoga","Stretching","Mobility","Hiking","Foam rollin
 
 /* ---------- state ---------- */
 let S = {settings:{...DEFAULTS}, days:{}, plan:null, profile:{}, nutri:null, blockSeen:{}, mealplan:null, foods:{}, recapSeen:{}, sgoals:[]};
+const Cloud = window.AdonisCloud;
 const MP = window.AdonisMeals;
 const N = window.AdonisNutrition;
 const E = window.AdonisEngine;
@@ -641,8 +664,9 @@ function shown(e, D){ return (D.swap && D.swap[e.n]) || e.n; }
 function isBW(name, e){ const x = E && E.BY_NAME[name]; return x ? (x.eq.length===0 && x.p!=="cond") : !!e.bw; }
 
 /* ---------- storage ---------- */
-function cacheLocal(){try{localStorage.setItem("adonis-v1", JSON.stringify(S))}catch(e){}}
-function loadLocal(){try{const r=localStorage.getItem("adonis-v1");if(r){const o=JSON.parse(r);S={settings:{...DEFAULTS,...o.settings},days:o.days||{},plan:o.plan||null,profile:o.profile||{},nutri:o.nutri||null,blockSeen:o.blockSeen||{},mealplan:o.mealplan||null,foods:o.foods||{},recapSeen:o.recapSeen||{},sgoals:o.sgoals||[]}}}catch(e){}}
+function cacheLocal(){try{localStorage.setItem("adonis-v1", JSON.stringify(S))}catch(e){} Cloud.touch()}
+function fromObj(o){o=o||{};return {settings:{...DEFAULTS,...o.settings},days:o.days||{},plan:o.plan||null,profile:o.profile||{},nutri:o.nutri||null,blockSeen:o.blockSeen||{},mealplan:o.mealplan||null,foods:o.foods||{},recapSeen:o.recapSeen||{},sgoals:o.sgoals||[]}}
+function loadLocal(){try{const r=localStorage.getItem("adonis-v1");if(r)S=fromObj(JSON.parse(r))}catch(e){}}
 function setStatus(t){$("#status").textContent=t}
 const timers = {};
 function saveDay(d){
@@ -658,6 +682,7 @@ function saveSettings(){
 /* ---------- backup ---------- */
 function markBackup(){ S.settings.lastBackup = todayStr(); S.settings.backupSnooze = ""; cacheLocal(); render(); }
 function backupBanner(){
+  if(Cloud.user) return "";   // signed in: logs are saved to the account
   const logged = Object.keys(S.days).length;
   if(logged < 3) return "";
   const last = S.settings.lastBackup, sn = S.settings.backupSnooze;
@@ -2447,11 +2472,13 @@ function checkBodyWins(d, what){
 
 /* ---------- account menu: reset plans, send feedback ---------- */
 const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
-const APP_VERSION = "2026.10.27";   // bump with the cache VERSION in sw.js on every release
+const APP_VERSION = "2026.11.16";   // bump with the cache VERSION in sw.js on every release
 function openMenu(){
+  const u = Cloud.user;
   openSheet("Your Adonis", `<div class="sheetbrand"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></div><div class="menu-list">
+    ${u ? `<button class="menu-item" data-menu="account"><span class="avatar" aria-hidden="true">${esc(initial(u))}</span><span>${esc(u.displayName || "Your account")}<small>${esc(u.email || "")}</small></span></button>` : ""}
     <button class="menu-item" data-menu="feedback"><span>Send feedback<small>Tell us what's working and what isn't</small></span></button>
-    <button class="menu-item" data-menu="backup"><span>Save a backup<small>${S.settings.lastBackup?`Last backup: ${esc(parse(S.settings.lastBackup).toLocaleDateString(undefined,{month:"short",day:"numeric"}))}`:"No backup yet"}</small></span></button>
+    <button class="menu-item" data-menu="backup"><span>Save a backup<small>${u ? "Optional, since your account saves everything" : S.settings.lastBackup?`Last backup: ${esc(parse(S.settings.lastBackup).toLocaleDateString(undefined,{month:"short",day:"numeric"}))}`:"No backup yet"}</small></span></button>
     <button class="menu-item" data-menu="restore"><span>Restore from backup<small>Load a backup file, like when you get a new phone</small></span></button>
     <button class="menu-item danger" data-menu="reset"><span>Reset all plans<small>Start fresh with new workout, nutrition and meal plans</small></span></button>
   </div><p class="tip" style="margin-top:16px">Adonis version ${APP_VERSION}</p>`);
@@ -2480,13 +2507,14 @@ document.addEventListener("click", async e=>{
   const t = e.target.closest("[data-menu]"); if(!t) return;
   const m = t.dataset.menu;
   if(m==="feedback"){ openSheet("Send feedback", feedbackHTML()); setTimeout(()=>{ const x=$("#fbtext"); x && x.focus(); }, 50); return; }
+  if(m==="account"){ openAccount(); return; }
   if(m==="backup"){ exportData(); return; }
   if(m==="restore"){ $("#importfile").click(); return; }
   if(m==="reset"){ openSheet("Reset all plans", resetHTML()); return; }
   if(m==="reset-go"){
     const wipe = $("#wipeall") && $("#wipeall").checked;
     S.plan = null; S.nutri = null; S.mealplan = null; S.profile = {}; S.blockSeen = {}; S.recapSeen = {}; bsub = "";
-    if(wipe){ S.days = {}; S.foods = {}; S.sgoals = []; }
+    if(wipe){ S.days = {}; S.foods = {}; S.sgoals = []; S.settings.wipedAt = Date.now(); }
     S.settings.start = todayStr(); cur = todayStr(); tab = "train"; MEALPOS = {key:"", i:0};
     cacheLocal(); closeBuilder(); window.scrollTo(0,0); showToast(wipe ? "Everything's reset. Fresh start." : "Plans reset. Your history is safe."); return;
   }
@@ -2731,8 +2759,191 @@ document.addEventListener("input", e=>{
   if(e.target.id==="fqty" && FOODCTX){ const v = num(e.target.value); if(v>0){ FOODCTX.qty = v; updateFoodKV(); } }
 });
 
+/* ---------- accounts: sign-in screen, account page, sync hooks (cloud.js does the Firebase work) ---------- */
+function initial(u){ return (((u && (u.displayName || u.email)) || "?").trim().charAt(0) || "?").toUpperCase(); }
+const AUTHBRAND = `<div class="sheetbrand"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></div>`;
+const GHOST = `style="background:var(--field);color:var(--ink);border:1px solid var(--line)"`;
+let AUTH = {mode:"signup", email:"", msg:"", ok:""}, mergeResolve = null;
+function showAuth(mode, extra){ AUTH = {...AUTH, msg:"", ok:"", ...(extra||{}), mode}; const el = $("#auth"); el.hidden = false; renderAuth(); el.scrollTop = 0; }
+function hideAuth(){ const el = $("#auth"); const was = !el.hidden; el.hidden = true; el.innerHTML = ""; return was; }
+function loggedDays(){ return Object.keys(S.days).filter(d=>!Cloud.blankDay(S.days[d])).length; }
+function hasLocalData(){ return !!(S.plan || S.nutri || S.mealplan || loggedDays()); }
+function authField(id, label, type, ac, extra){ return `<div class="field"><label for="${id}">${label}</label><input id="${id}" type="${type}" autocomplete="${ac}" ${type==="email"?`inputmode="email" autocapitalize="off" spellcheck="false" value="${esc(AUTH.email)}"`:""} ${extra||""}></div>`; }
+function renderAuth(){
+  const a = AUTH, n = loggedDays();
+  const what = [S.plan || S.nutri || S.mealplan ? "plans" : "", n ? `${n} logged day${n===1?"":"s"}` : ""].filter(Boolean).join(" and ");
+  const keepNote = !Cloud.claimed && hasLocalData() ? `<div class="note">Your ${what} on this phone come with you. They move into your account when you sign in.</div>` : "";
+  let h;
+  if(a.mode==="signup") h = `<h2>Create your account</h2><p class="sub">Your plans and logs save to your account, so they're backed up and follow you to any phone.</p>
+    <form data-auth="signup" novalidate>
+      ${authField("au-name","First name","text","given-name",'autocapitalize="words"')}
+      ${authField("au-email","Email","email","email")}
+      ${authField("au-pw","Password","password","new-password",'minlength="8"')}<p class="tip" style="margin:-8px 0 4px">At least 8 characters.</p>
+      <label class="checkrow"><input type="checkbox" data-auth-show><span>Show password</span></label>
+      <div class="err" role="alert">${esc(a.msg)}</div>
+      <button class="primary start" type="submit">Create account</button></form>
+    <button class="alt" data-auth-go="signin">Already have an account? Sign in</button>${keepNote}`;
+  else if(a.mode==="reset") h = `<h2>Reset your password</h2><p class="sub">Enter your account's email and we'll send you a link to pick a new password.</p>
+    <form data-auth="reset" novalidate>${authField("au-email","Email","email","email")}
+      <div class="err" role="alert">${esc(a.msg)}</div><div class="ok" role="status">${esc(a.ok)}</div>
+      <button class="primary" type="submit">Send reset link</button></form>
+    <button class="alt" data-auth-go="signin">Back to sign in</button>`;
+  else if(a.mode==="loading") h = `<h2>Getting your account ready</h2><div class="spin" aria-hidden="true"></div><p class="sub">Loading your plans and logs.</p>`;
+  else if(a.mode==="error") h = `<h2>Couldn't load your account</h2><p class="sub">${esc(a.msg)}</p>
+    <button class="primary start" data-auth-go="retry">Try again</button><button class="alt" data-auth-go="signout">Sign out</button>`;
+  else if(a.mode==="merge") h = `<h2>This phone already has logs</h2><p class="sub">You logged ${n} day${n===1?"":"s"} on this phone before signing in, and your account already has its own data.</p>
+    <button class="primary start" data-auth-merge="merge">Add this phone's logs to my account</button>
+    <button class="primary" data-auth-merge="account" ${GHOST}>Use only my account's data</button>
+    <p class="tip">Adding keeps every day already in your account and fills in the days it's missing from this phone. Your plans and settings come from your account either way.</p>`;
+  else h = `<h2>Welcome back</h2><p class="sub">Sign in to pick up where you left off.</p>
+    <form data-auth="signin" novalidate>${authField("au-email","Email","email","username")}${authField("au-pw","Password","password","current-password")}
+      <label class="checkrow"><input type="checkbox" data-auth-show><span>Show password</span></label>
+      <div class="err" role="alert">${esc(a.msg)}</div>
+      <button class="primary start" type="submit">Sign in</button></form>
+    <button class="alt" data-auth-go="reset">Forgot your password?</button>
+    <button class="alt" style="margin-top:0" data-auth-go="signup">New to Adonis? Create an account</button>${keepNote}`;
+  $("#auth").innerHTML = `<div class="in">${AUTHBRAND}${h}</div>`;
+}
+document.addEventListener("submit", async e=>{
+  const f = e.target.closest("form[data-auth]"); if(!f) return;
+  e.preventDefault();
+  const kind = f.dataset.auth, err = f.querySelector(".err"), btn = f.querySelector("button[type=submit]"), label = btn.textContent;
+  const email = (($("#au-email")||{}).value || "").trim(), pw = ($("#au-pw")||{}).value || "", name = (($("#au-name")||{}).value || "").trim();
+  AUTH.email = email;
+  const fail = m => { err.textContent = m; btn.disabled = false; btn.textContent = label; };
+  err.textContent = ""; const ok = f.querySelector(".ok"); if(ok) ok.textContent = "";
+  if(kind==="signup" && !name) return fail("Enter your first name.");
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Enter your email address.");
+  if(kind==="signup" && pw.length < 8) return fail("Use at least 8 characters for your password.");
+  if(kind==="signin" && !pw) return fail("Enter your password.");
+  btn.disabled = true; btn.textContent = kind==="signup" ? "Creating your account…" : kind==="signin" ? "Signing in…" : "Sending…";
+  try{
+    if(kind==="signup") await Cloud.signUp(name, email, pw);
+    else if(kind==="signin") await Cloud.signIn(email, pw);
+    else { await Cloud.resetPassword(email); btn.disabled = false; btn.textContent = label; if(ok) ok.textContent = "If there's an account for that email, a reset link is on its way. Check your inbox and spam folder."; }
+  }catch(x){ fail(Cloud.friendly(x)); }
+});
+document.addEventListener("change", e=>{
+  if(e.target.matches("[data-auth-show]")){ const p = $("#au-pw"); if(p) p.type = e.target.checked ? "text" : "password"; }
+});
+document.addEventListener("click", async e=>{
+  const t = e.target.closest("[data-auth-go],[data-auth-merge],[data-acctgo]"); if(!t) return;
+  if(t.dataset.authGo){
+    const g = t.dataset.authGo;
+    if(g==="retry"){ showAuth("loading"); Cloud.retry(); return; }
+    if(g==="signout"){ try{ await Cloud.signOut(); }catch(x){} showAuth("signin"); return; }
+    const em = $("#au-email"); if(em) AUTH.email = em.value.trim();
+    showAuth(g); setTimeout(()=>{ const f = $("#auth input"); f && !f.value && f.focus(); }, 50); return;
+  }
+  if(t.dataset.authMerge){ const r = mergeResolve; mergeResolve = null; showAuth("loading"); r && r(t.dataset.authMerge); return; }
+  const g = t.dataset.acctgo;
+  if(g==="signout"){
+    const warn = Cloud.pending() && navigator.onLine === false;
+    openSheet("Sign out", `<p class="sub">${warn ? "<b>You're offline and some changes haven't reached your account yet.</b> Signing out now loses them. Connect to the internet first if you can." : "Your plans and logs stay saved to your account. This phone is cleared, and you can sign back in anytime."}</p>
+      <button class="primary ${warn?"dangerbtn":""}" data-acctgo="signout-go">Sign out</button><button class="primary" data-acctgo="back" ${GHOST}>Cancel</button>`); return;
+  }
+  if(g==="signout-go"){
+    t.disabled = true; t.textContent = "Signing out…";
+    try{ await Cloud.signOut(); }catch(x){}
+    closeBuilder(); showAuth("signin"); return;
+  }
+  if(g==="delete"){
+    openSheet("Delete account", `<p class="sub">This permanently erases your Adonis account and everything saved to it: plans, logs, weigh-ins, records and saved foods. It can't be undone.</p>
+      <form class="card acct" data-acct="delete"><input type="email" autocomplete="username" value="${esc(Cloud.user.email||"")}" hidden>
+      <div class="field"><label for="ac-delpw">Enter your password to confirm</label><input id="ac-delpw" type="password" autocomplete="current-password"></div>
+      <label class="checkrow"><input type="checkbox" id="ac-delok"><span>I understand everything in my account will be erased.</span></label>
+      <div class="err" role="alert"></div><button class="primary dangerbtn" type="submit">Delete my account</button></form>
+      <button class="primary" data-acctgo="back" ${GHOST}>Keep my account</button>`); return;
+  }
+  if(g==="back"){ openAccount(); return; }
+});
+document.addEventListener("submit", async e=>{
+  const f = e.target.closest("form[data-acct]"); if(!f) return;
+  e.preventDefault();
+  const kind = f.dataset.acct, err = f.querySelector(".err"), btn = f.querySelector("button[type=submit]"), label = btn.textContent;
+  const fail = m => { err.textContent = m; btn.disabled = false; btn.textContent = label; };
+  err.textContent = "";
+  try{
+    if(kind==="name"){
+      const name = $("#ac-name").value.trim(); if(!name) return fail("Enter your first name.");
+      btn.disabled = true; btn.textContent = "Saving…"; await Cloud.updateName(name); openAccount(); showToast("Name saved.", true);
+    }
+    if(kind==="pw"){
+      const cur = $("#ac-cur").value, next = $("#ac-new").value;
+      if(!cur) return fail("Enter your current password.");
+      if(next.length < 8) return fail("Use at least 8 characters for your new password.");
+      btn.disabled = true; btn.textContent = "Updating…"; await Cloud.changePassword(cur, next); openAccount(); showToast("Password changed.", true);
+    }
+    if(kind==="delete"){
+      const pw = $("#ac-delpw").value;
+      if(!pw) return fail("Enter your password.");
+      if(!$("#ac-delok").checked) return fail("Check the box to confirm.");
+      btn.disabled = true; btn.textContent = "Deleting…"; await Cloud.deleteAccount(pw);
+      closeBuilder(); showAuth("signup"); showToast("Your account and its data were deleted.");
+    }
+  }catch(x){ fail(Cloud.friendly(x)); }
+});
+function ago(ms){
+  const m = Math.round((Date.now()-ms)/60000);
+  if(m < 1) return "just now"; if(m < 60) return `${m} min ago`;
+  const h = Math.round(m/60); if(h < 24) return `${h} hour${h===1?"":"s"} ago`;
+  return "on " + new Date(ms).toLocaleDateString(undefined,{month:"short",day:"numeric"});
+}
+function syncLine(){
+  const s = Cloud.state, at = Cloud.synced;
+  if(s==="syncing") return `<span class="syncdot"></span>Saving to your account…`;
+  if(s==="offline") return `<span class="syncdot off"></span>Offline. Your changes are safe on this phone and save to your account when you're back online.`;
+  if(s==="error") return `<span class="syncdot err"></span>Couldn't reach your account just now. Your changes are safe on this phone and will try again.`;
+  return `<span class="syncdot"></span>${at ? `Everything saved to your account ${ago(at)}` : "Saved to your account"}`;
+}
+function openAccount(){
+  const u = Cloud.user; if(!u){ closeBuilder(); return; }
+  const since = u.metadata && u.metadata.creationTime ? new Date(u.metadata.creationTime).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"}) : "";
+  openSheet("Your account", `<div class="acct">
+    <div class="card acct-card"><span class="avatar" aria-hidden="true">${esc(initial(u))}</span><div><b>${esc(u.displayName || "Adonis athlete")}</b><small>${esc(u.email || "")}</small></div></div>
+    <p class="tip" id="syncline" role="status">${syncLine()}</p>${since ? `<p class="tip">Member since ${esc(since)}</p>` : ""}
+    <h3>Name</h3>
+    <form class="card" data-acct="name" novalidate><div class="field"><label for="ac-name">First name</label><input id="ac-name" autocomplete="given-name" autocapitalize="words" value="${esc(u.displayName || "")}"></div>
+      <div class="err" role="alert"></div><button class="primary" type="submit">Save name</button></form>
+    <h3>Password</h3>
+    <form class="card" data-acct="pw" novalidate><input type="email" autocomplete="username" value="${esc(u.email || "")}" hidden>
+      <div class="field"><label for="ac-cur">Current password</label><input id="ac-cur" type="password" autocomplete="current-password"></div>
+      <div class="field" style="margin-top:10px"><label for="ac-new">New password</label><input id="ac-new" type="password" autocomplete="new-password" minlength="8"></div>
+      <div class="err" role="alert"></div><button class="primary" type="submit">Change password</button></form>
+    <h3>Sign out or delete</h3>
+    <button class="primary" data-acctgo="signout" ${GHOST}>Sign out</button>
+    <button class="primary dangerbtn" data-acctgo="delete">Delete my account</button>
+    <p class="tip">Deleting erases your account and everything saved to it.</p></div>`);
+  Cloud.syncNow();
+}
+function afterCloud(){
+  try{ localStorage.setItem("adonis-v1", JSON.stringify(S)); }catch(e){}
+  if($("#builder").hidden && $("#focus").hidden) render();
+}
+const CloudApp = {
+  getMain(){ const {days, ...m} = S; return m; },
+  getDays(){ return S.days; },
+  getWipe(){ return +(S.settings.wipedAt || 0); },
+  hasData: hasLocalData,
+  applyMain(m){ S = fromObj({...m, days:S.days}); afterCloud(); },
+  applyDays(o){ Object.assign(S.days, o); afterCloud(); },
+  wipeDays(){ S.days = {}; afterCloud(); },
+  reset(){ S = fromObj({}); try{ localStorage.removeItem("adonis-v1"); }catch(e){} cur = todayStr(); tab = "today"; bsub = ""; MEALPOS = {key:"", i:0}; render(); },
+  askMerge(){ return new Promise(res=>{ mergeResolve = res; showAuth("merge"); }); },
+  onStatus(){ const el = $("#syncline"); if(el) el.innerHTML = syncLine(); },
+  onAuth(u, phase, msg){
+    if(!u){ if($("#auth").hidden) showAuth(Cloud.claimed ? "signin" : "signup"); return; }
+    if(phase==="loading"){ showAuth("loading"); return; }
+    if(phase==="error"){ showAuth("error", {msg}); return; }
+    if(phase==="ready"){ const wasShowing = hideAuth(); render(); if(wasShowing) showToast(`Signed in${u.displayName ? ` as ${u.displayName}` : ""}. Everything now saves to your account.`, true); }
+  }
+};
+
 loadLocal();
 render();
+Cloud.start(CloudApp);
+// accounts are on and this phone isn't signed in yet: show the sign-up screen behind the splash
+if(Cloud.enabled && !Cloud.claimed) showAuth("signup");
 if("serviceWorker" in navigator){
   // when a new version takes over, reload once so the screen shows the new code (not on the very first install)
   const hadSW = !!navigator.serviceWorker.controller; let reloaded = false;

@@ -1,0 +1,5 @@
+vendor/firebase.js is built from the Firebase JavaScript SDK 13.4.0
+(https://github.com/firebase/firebase-js-sdk), Copyright Google LLC,
+licensed under the Apache License, Version 2.0:
+https://www.apache.org/licenses/LICENSE-2.0
+See tools/firebase-entry.js for how it is built.
