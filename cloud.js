@@ -9,6 +9,10 @@
  *   users/{uid}/state/main    { j: JSON of everything except logged days, t, wipe }
  *   users/{uid}/days/{date}   { j: JSON of that day's log, t }
  * Data is stored as JSON text so Firestore never has to understand the app's shapes (it rejects nested arrays).
+ *
+ * Coaching (Cloud.coach): one login can also be a coach. A coach gets an invite code; a client enters it to link.
+ *   coaches/{uid}, invites/{code}, links/{coachUid_clientUid}. While linked, the coach can read the client's
+ *   users/{uid} tree (never change it) and write only users/{uid}/coach/. Either side can unlink.
  */
 (function () {
   "use strict";
@@ -169,6 +173,118 @@
     await push(); meta.synced = Date.now(); saveMeta();
   }
 
+  /* ---------- coaching: invite codes and client links (rules in firestore.rules) ---------- */
+  // no 0/O or 1/I, so a code read aloud or off a screen can't be mistyped
+  const CODE_ABC = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  function newCode() {
+    const r = new Uint32Array(8);
+    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(r); else for (let i = 0; i < 8; i++) r[i] = Math.floor(Math.random() * 4294967296);
+    let s = ""; for (let i = 0; i < 8; i++) s += CODE_ABC[r[i] % CODE_ABC.length];
+    return s;
+  }
+  function cleanCode(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+  function coachErr(code, msg) { const e = new Error(msg); e.code = "coach/" + code; e.coachMsg = msg; return e; }
+  const CR = {
+    coach: () => FB.doc(db, "coaches", user.uid),
+    invite: c => FB.doc(db, "invites", c),
+    links: () => FB.collection(db, "links"),
+    link: id => FB.doc(db, "links", id),
+  };
+  async function linksWhere(field) {
+    const snap = await FB.getDocs(FB.query(CR.links(), FB.where(field, "==", user.uid)));
+    const out = []; snap.forEach(s => out.push({ id: s.id, ...s.data() }));
+    return out;
+  }
+  async function deleteAll(refs) {
+    for (let i = 0; i < refs.length; i += 450) {
+      const b = FB.writeBatch(db);
+      refs.slice(i, i + 450).forEach(r => b.delete(r));
+      await b.commit();
+    }
+  }
+  const Coach = {
+    cleanCode,
+    // this person's coach profile, or null if they haven't turned on coach mode
+    async profile() {
+      const s = await FB.getDoc(CR.coach());
+      return s.exists() ? s.data() : null;
+    },
+    // a fresh code can (very rarely) collide with someone else's; the rules refuse that write, so try another
+    async start() {
+      const had = await Coach.profile(); if (had) return had;     // already a coach: never orphan the old code
+      const name = user.displayName || "Your coach";
+      for (let i = 0; i < 4; i++) {
+        const code = newCode(), b = FB.writeBatch(db);
+        b.set(CR.invite(code), { coach: user.uid, name, created: FB.serverTimestamp() });
+        b.set(CR.coach(), { name, code, created: FB.serverTimestamp() });
+        try { await b.commit(); return { name, code }; }
+        catch (e) { if (!/permission-denied/.test((e && e.code) || "") || i === 3) throw e; }
+      }
+    },
+    // retire the old code (people already linked stay linked) and hand out a new one
+    async newCode() {
+      const p = await Coach.profile(); if (!p) throw coachErr("not-coach", "Coach mode isn't on.");
+      const name = user.displayName || p.name || "Your coach";
+      for (let i = 0; i < 4; i++) {
+        const code = newCode(), b = FB.writeBatch(db);
+        if (p.code) b.delete(CR.invite(p.code));
+        b.set(CR.invite(code), { coach: user.uid, name, created: FB.serverTimestamp() });
+        b.set(CR.coach(), { ...p, name, code });
+        try { await b.commit(); return code; }
+        catch (e) { if (!/permission-denied/.test((e && e.code) || "") || i === 3) throw e; }
+      }
+    },
+    // turning coach mode off unlinks every client and retires the code
+    async stop() {
+      const p = await Coach.profile(), mine = await linksWhere("coach");
+      const refs = mine.map(l => CR.link(l.id));
+      if (p && p.code) refs.push(CR.invite(p.code));
+      refs.push(CR.coach());
+      await deleteAll(refs);
+    },
+    // the coach's clients, each with how recently they logged (read straight from the client's account)
+    // days7 = how many of the last 7 calendar days (today included) have something logged
+    async roster() {
+      const mine = await linksWhere("coach"), since = Date.now() - 14 * 864e5;
+      const d = new Date(Date.now() - 6 * 864e5), pad = n => String(n).padStart(2, "0");
+      const week = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      return Promise.all(mine.map(async l => {
+        const r = { id: l.id, client: l.client, name: l.clientName || "Client", linked: tms(l.created), lastLog: 0, days7: 0, ok: true };
+        try {
+          const snap = await FB.getDocs(FB.query(FB.collection(db, "users", l.client, "days"), FB.where("t", ">", FB.Timestamp.fromMillis(since))));
+          snap.forEach(s => {
+            const v = s.data(); let D = null; try { D = JSON.parse(v.j); } catch (e) {}
+            if (blankDay(D)) return;
+            const t = tms(v.t); if (t > r.lastLog) r.lastLog = t;
+            if (s.id >= week) r.days7++;
+          });
+        } catch (e) { r.ok = false; }
+        return r;
+      }));
+    },
+    // the client's side: who coaches me (one coach at a time)
+    async mine() {
+      const l = await linksWhere("client");
+      return l.length ? { id: l[0].id, coach: l[0].coach, name: l[0].coachName || "Your coach", linked: tms(l[0].created) } : null;
+    },
+    async link(raw) {
+      const code = cleanCode(raw);
+      if (code.length !== 8) throw coachErr("bad-code", "Invite codes are 8 letters and numbers. Check it and try again.");
+      if (await Coach.mine()) throw coachErr("has-coach", "You're already linked to a coach. Unlink first to switch.");
+      const inv = await FB.getDoc(CR.invite(code));
+      if (!inv.exists()) throw coachErr("no-code", "No coach has that code. Check it with your coach, they may have made a new one.");
+      const c = inv.data();
+      if (c.coach === user.uid) throw coachErr("self", "That's your own invite code. Share it with your clients.");
+      const id = c.coach + "_" + user.uid, b = FB.writeBatch(db);
+      b.set(CR.link(id), { coach: c.coach, client: user.uid, coachName: c.name || "Your coach", clientName: user.displayName || "Client", code, created: FB.serverTimestamp() });
+      await b.commit();
+      return { id, coach: c.coach, name: c.name || "Your coach" };
+    },
+    // either side can end a link; the coach loses access right away
+    async unlink(id) { await deleteAll([CR.link(id)]); },
+    friendly(e) { return (e && e.coachMsg) || friendly(e); },
+  };
+
   async function onUser(u) {
     user = u; ready = false;
     if (!u) {
@@ -195,6 +311,7 @@
     get claimed() { return !!meta.uid; },
     friendly,
     blankDay,
+    coach: Coach,
 
     start(app) {
       A = app;
@@ -255,11 +372,16 @@
       const snap = await FB.getDocs(R.days()), refs = [];
       snap.forEach(s => refs.push(R.day(s.id)));
       refs.push(R.main(), R.profile());
-      for (let i = 0; i < refs.length; i += 450) {
-        const b = FB.writeBatch(db);
-        refs.slice(i, i + 450).forEach(r => b.delete(r));
-        await b.commit();
-      }
+      // coaching: unlink from a coach and from any clients, retire the invite code, clear coach-set data
+      try {
+        const links = [...await linksWhere("client"), ...await linksWhere("coach")];
+        links.forEach(l => refs.push(CR.link(l.id)));
+        const cs = await FB.getDocs(FB.collection(db, "users", user.uid, "coach"));
+        cs.forEach(s => refs.push(FB.doc(db, "users", user.uid, "coach", s.id)));
+        const p = await Coach.profile();
+        if (p) { if (p.code) refs.push(CR.invite(p.code)); refs.push(CR.coach()); }
+      } catch (e) { if (window.console) console.warn("Adonis coach cleanup:", e); }
+      await deleteAll(refs);
       await FB.deleteUser(user);
       meta = {}; try { localStorage.removeItem(META_KEY); } catch (e) {}
       A.reset();
