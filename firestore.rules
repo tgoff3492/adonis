@@ -1,21 +1,29 @@
 rules_version = '2';
 // Paste into Firebase console > Firestore Database > Rules, then Publish.
 //
-// Each person owns their users/{uid} tree. Nobody else can read it, except a coach they've linked to,
-// who can read it (never change it) for as long as the link exists.
+// Each person owns their users/{uid} tree. Nobody else can read it, except an active coach they've linked to,
+// who can read it (never change it) for as long as the link exists and their coach access is active.
 // A coach can write only inside users/{client}/coach/, where coach-set plans, targets and notes go.
 //
-//   coaches/{uid}            { name, code, created }          a coach's own profile (only they can touch it)
-//   invites/{code}           { coach, name, created }         look up a coach by invite code (one at a time, never listed)
+//   admins/{uid}               {}                                  made by hand in the console; admins issue coach codes
+//   coachKeys/{key}            { created, note, usedBy, usedName, usedAt }   one-time activation codes for coach access
+//   coaches/{uid}              { name, code, key, active, activated }     coach access; only an admin (or a payment
+//                                                                       server using the Admin SDK) can change active
+//   invites/{code}             { coach, name, created }           look up a coach by invite code (one at a time, never listed)
 //   links/{coachUid_clientUid} { coach, client, coachName, clientName, code, created }
-//                            made by the client with a real invite code; either side can delete it to unlink
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function me(uid) { return signedIn() && request.auth.uid == uid; }
-    // the signed-in person coaches this user right now
+    function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function activeCoach(uid) {
+      return exists(/databases/$(database)/documents/coaches/$(uid))
+        && get(/databases/$(database)/documents/coaches/$(uid)).data.active == true;
+    }
+    // the signed-in person is an active coach linked to this user right now
     function coachOf(uid) {
-      return signedIn() && exists(/databases/$(database)/documents/links/$(request.auth.uid + '_' + uid));
+      return signedIn() && exists(/databases/$(database)/documents/links/$(request.auth.uid + '_' + uid))
+        && activeCoach(request.auth.uid);
     }
 
     match /users/{uid} {
@@ -37,16 +45,42 @@ service cloud.firestore {
       allow delete: if me(uid) || coachOf(uid);
     }
 
+    match /admins/{uid} {
+      allow get: if me(uid);
+    }
+
+    // one-time coach activation codes, issued by an admin
+    match /coachKeys/{key} {
+      allow get: if signedIn();
+      allow list, delete: if isAdmin();
+      allow create: if isAdmin() && key.matches('^[A-Z0-9]{12}$') && request.resource.data.usedBy == null;
+      // redeeming: an unused code is claimed in the same write that turns on the person's coach access
+      allow update: if isAdmin() || (signedIn()
+        && resource.data.usedBy == null
+        && request.resource.data.usedBy == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy', 'usedName', 'usedAt'])
+        && getAfter(/databases/$(database)/documents/coaches/$(request.auth.uid)).data.key == key);
+    }
+
     match /coaches/{uid} {
-      allow read, delete: if me(uid);
-      allow create, update: if me(uid) && request.resource.data.code is string;
+      allow read: if me(uid) || isAdmin();
+      allow delete: if me(uid) || isAdmin();
+      // turning on coach access: only by claiming a fresh activation code in the same write (or by an admin)
+      allow create, update: if isAdmin() || (me(uid)
+        && request.resource.data.active == true
+        && request.resource.data.key is string
+        && get(/databases/$(database)/documents/coachKeys/$(request.resource.data.key)).data.usedBy == null
+        && getAfter(/databases/$(database)/documents/coachKeys/$(request.resource.data.key)).data.usedBy == uid);
+      // after that, a coach can change only their display name and invite code
+      allow update: if me(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'code']);
     }
 
     match /invites/{code} {
       allow get: if signedIn();
       allow list: if false;
       allow create: if signedIn() && code.matches('^[A-Z0-9]{8}$')
-        && request.resource.data.coach == request.auth.uid;
+        && request.resource.data.coach == request.auth.uid
+        && getAfter(/databases/$(database)/documents/coaches/$(request.auth.uid)).data.active == true;
       allow delete: if signedIn() && resource.data.coach == request.auth.uid;
     }
 
@@ -58,7 +92,8 @@ service cloud.firestore {
         && request.resource.data.coach != request.auth.uid
         && id == request.resource.data.coach + '_' + request.auth.uid
         && request.resource.data.code is string
-        && get(/databases/$(database)/documents/invites/$(request.resource.data.code)).data.coach == request.resource.data.coach;
+        && get(/databases/$(database)/documents/invites/$(request.resource.data.code)).data.coach == request.resource.data.coach
+        && activeCoach(request.resource.data.coach);
       allow delete: if signedIn()
         && (resource.data.coach == request.auth.uid || resource.data.client == request.auth.uid);
     }
