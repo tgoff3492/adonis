@@ -460,6 +460,26 @@ body.resting .wrap{padding-bottom:200px}
 .checkrow input{width:22px;height:22px;flex:none;margin-top:1px}
 .dangerbtn{background:var(--protein)!important;color:#fff!important}
 
+/* coaching: mode switch, invite code, roster */
+.modesw{display:flex;padding:3px;border-radius:22px;background:var(--field);border:1px solid var(--line)}
+.modesw[hidden]{display:none}
+.modesw button{border:0;background:none;border-radius:18px;min-height:36px;padding:0 12px;white-space:nowrap;font:600 16px var(--display);color:var(--muted);cursor:pointer}
+.modesw button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+@media (max-width:429px){.topbar:has(.modesw:not([hidden])) .wordmark{display:none}}
+.codecard{text-align:center}
+.codecard .code{font:700 34px/1.1 var(--display);letter-spacing:.14em;margin:6px 0 4px;user-select:all;-webkit-user-select:all}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.btnrow button{flex:1 1 0;min-height:44px;border:1px solid var(--line);background:var(--field);border-radius:22px;font-weight:600;font-size:15px;cursor:pointer;color:var(--ink)}
+.client{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.client:first-child{border-top:0}
+.client .avatar{width:40px;height:40px;font-size:18px}
+.client .nm{flex:1;min-width:0}
+.client .nm b{display:block;font-weight:600;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.client .nm small{display:block;font-size:13px;color:var(--muted)}
+.client .rm{border:1px solid var(--line);background:var(--field);border-radius:20px;min-height:40px;padding:0 12px;font-size:14px;font-weight:600;cursor:pointer;color:var(--ink)}
+.flag{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:10px;margin-top:4px;border:1px solid var(--protein);color:var(--protein)}
+.codein{font:700 24px var(--display)!important;letter-spacing:.12em;text-transform:uppercase;text-align:center}
+
 /* body sub-tabs */
 .reclist{padding:4px 14px}
 .rec{border-top:1px solid var(--line)}
@@ -583,7 +603,7 @@ body.on-home{overflow:hidden}
 </section>
 <div class="wrap">
   <header>
-    <div class="topbar"><span class="brand" aria-label="Adonis"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></span><button class="iconbtn person" id="menu" aria-label="Your account and settings" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 20.5c1.6-3.6 4.6-5.5 8-5.5s6.4 1.9 8 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <div class="topbar"><span class="brand" aria-label="Adonis"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></span><div class="modesw" id="modesw" role="group" aria-label="Mode" hidden><button data-mode="me" aria-pressed="true">My training</button><button data-mode="coach" aria-pressed="false">Coach</button></div><button class="iconbtn person" id="menu" aria-label="Your account and settings" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="8.5" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 20.5c1.6-3.6 4.6-5.5 8-5.5s6.4 1.9 8 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
     <div class="datebar">
       <button class="iconbtn" id="prev" aria-label="Previous day">‹</button>
       <h1 id="dtitle">Today<small id="dsub"></small></h1>
@@ -2472,11 +2492,13 @@ function checkBodyWins(d, what){
 
 /* ---------- account menu: reset plans, send feedback ---------- */
 const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
-const APP_VERSION = "2026.11.16";   // bump with the cache VERSION in sw.js on every release
+const APP_VERSION = "2026.11.19";   // bump with the cache VERSION in sw.js on every release
 function openMenu(){
   const u = Cloud.user;
   openSheet("Your Adonis", `<div class="sheetbrand"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></div><div class="menu-list">
     ${u ? `<button class="menu-item" data-menu="account"><span class="avatar" aria-hidden="true">${esc(initial(u))}</span><span>${esc(u.displayName || "Your account")}<small>${esc(u.email || "")}</small></span></button>` : ""}
+    ${u ? `<button class="menu-item" data-coach="mine"><span>Your coach<small>${COACH.mine ? `Linked to ${esc(COACH.mine.name)}` : "Have a trainer? Enter their invite code"}</small></span></button>
+    <button class="menu-item" data-coach="coach"><span>Coach mode<small>${COACH.profile ? "Your clients and invite code" : "Coach clients from this same login"}</small></span></button>` : ""}
     <button class="menu-item" data-menu="feedback"><span>Send feedback<small>Tell us what's working and what isn't</small></span></button>
     <button class="menu-item" data-menu="backup"><span>Save a backup<small>${u ? "Optional, since your account saves everything" : S.settings.lastBackup?`Last backup: ${esc(parse(S.settings.lastBackup).toLocaleDateString(undefined,{month:"short",day:"numeric"}))}`:"No backup yet"}</small></span></button>
     <button class="menu-item" data-menu="restore"><span>Restore from backup<small>Load a backup file, like when you get a new phone</small></span></button>
@@ -2916,6 +2938,117 @@ function openAccount(){
     <p class="tip">Deleting erases your account and everything saved to it.</p></div>`);
   Cloud.syncNow();
 }
+/* ---------- coaching: link to a coach, coach mode (cloud.js Cloud.coach does the Firebase work) ---------- */
+let COACH = {uid:"", profile:null, mine:null, loaded:false};
+async function loadCoach(){
+  const u = Cloud.user; if(!u || !Cloud.coach) return false;
+  try{
+    const [profile, mine] = await Promise.all([Cloud.coach.profile(), Cloud.coach.mine()]);
+    if(Cloud.user !== u) return false;
+    COACH = {uid:u.uid, profile, mine, loaded:true};
+  }catch(e){ COACH = {uid:u.uid, profile:null, mine:null, loaded:false}; }
+  renderModeSwitch();
+  return COACH.loaded;
+}
+function clearCoach(){ COACH = {uid:"", profile:null, mine:null, loaded:false}; renderModeSwitch(); }
+function renderModeSwitch(){ const el = $("#modesw"); if(el) el.hidden = !(Cloud.user && COACH.profile); }
+// coaching screens need fresh info from the account first; offline, say so instead of guessing
+async function withCoach(open){
+  if(COACH.loaded && Cloud.user && COACH.uid === Cloud.user.uid){ open(); return; }
+  openSheet("Coaching", `<div class="acct"><p class="sub">Checking your account…</p></div>`);
+  if(await loadCoach()) open();
+  else openSheet("Coaching", `<div class="acct"><p class="sub">Couldn't reach your account. Check your internet connection and try again.</p><button class="primary" data-coach="retry">Try again</button></div>`);
+}
+const fmtDay = ms => new Date(ms).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
+const prettyCode = c => c ? c.slice(0,4) + "-" + c.slice(4) : "";
+const firstLetter = n => esc(((n || "?").trim().charAt(0) || "?").toUpperCase());
+let COACHNEXT = "coach";
+function openMyCoach(){
+  COACHNEXT = "mine";
+  const m = COACH.mine;
+  if(m){
+    openSheet("Your coach", `<div class="acct"><div class="card acct-card"><span class="avatar" aria-hidden="true">${firstLetter(m.name)}</span><div><b>${esc(m.name)}</b><small>Your coach${m.linked ? ` since ${esc(fmtDay(m.linked))}` : ""}</small></div></div>
+      <p class="sub" style="margin-top:14px">${esc(m.name)} can see your plan, workouts, food and weigh-ins so they can coach you. They can't change your logs.</p>
+      <button class="primary" data-coach="unlink" ${GHOST}>Unlink from ${esc(m.name)}</button>
+      <p class="tip">Unlinking stops their access right away. Your data stays in your account.</p></div>`);
+    return;
+  }
+  openSheet("Your coach", `<div class="acct"><p class="sub">Working with a trainer or coach? Enter the invite code they gave you to link your Adonis account.</p>
+    <form class="card" data-coachf="link" novalidate><div class="field"><label for="co-code">Invite code</label><input id="co-code" class="codein" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="12" placeholder="ABCD-2345"></div>
+    <div class="err" role="alert"></div><button class="primary" type="submit">Link to my coach</button></form>
+    <p class="tip">Your coach will see your plan, workouts, food and weigh-ins. They can't change your logs, and you can unlink anytime.</p></div>`);
+  setTimeout(()=>{ const x = $("#co-code"); x && x.focus(); }, 50);
+}
+function openCoach(){
+  COACHNEXT = "coach";
+  const p = COACH.profile;
+  if(!p){
+    openSheet("Coach mode", `<div class="acct"><p class="sub">Coach clients from the same login you train with. You get an invite code to share, and clients who enter it are linked to you so you can see how their training is going.</p>
+      <div class="card"><p style="margin:0 0 6px"><b>Your own training stays separate.</b> Switch between My training and Coach at the top of the app.</p>
+      <p class="tip" style="margin:0">You can see your clients' logs but never change them, and clients can unlink anytime.</p></div>
+      <button class="primary" data-coach="start">Turn on coach mode</button></div>`);
+    return;
+  }
+  openSheet("Coach", `<div class="modesw" role="group" aria-label="Mode" style="margin:0 auto 16px;width:max-content"><button data-mode="me" aria-pressed="false">My training</button><button data-mode="coach" aria-pressed="true">Coach</button></div>
+    <div class="acct"><div class="card codecard"><div class="sub" style="margin:0">Your invite code</div>
+      <div class="code" aria-label="Invite code ${esc(p.code.split("").join(" "))}">${esc(prettyCode(p.code))}</div>
+      <p class="tip" style="margin:0">Clients enter it in Adonis under the menu, then Your coach.</p>
+      <div class="btnrow"><button data-coach="copy">Copy</button>${navigator.share ? `<button data-coach="share">Share</button>` : ""}<button data-coach="newcode">New code</button></div></div>
+    <h3>Your clients</h3><div class="card" id="roster" aria-live="polite"><p class="empty">Loading your clients…</p></div>
+    <h3>Coach mode</h3>
+    <button class="primary" data-coach="stop" ${GHOST}>Turn off coach mode</button>
+    <p class="tip">Turning it off unlinks all your clients and retires your code.</p></div>`);
+  loadRoster();
+}
+async function loadRoster(){
+  const box = () => $("#roster");
+  try{
+    const list = await Cloud.coach.roster();
+    if(!box()) return;
+    if(!list.length){ box().innerHTML = `<p class="empty">No clients yet. Share your invite code to get started.</p>`; return; }
+    list.sort((a,b)=>a.name.localeCompare(b.name));
+    box().innerHTML = list.map(c=>{
+      const quiet = c.ok && (!c.lastLog || Date.now() - c.lastLog > 3*864e5);
+      const line = !c.ok ? "Couldn't load their logs" : c.lastLog ? `Last log ${ago(c.lastLog)} · ${c.days7} of the last 7 days logged` : "Nothing logged in the last 2 weeks";
+      return `<div class="client"><span class="avatar" aria-hidden="true">${firstLetter(c.name)}</span><div class="nm"><b>${esc(c.name)}</b><small>${esc(line)}</small>${quiet ? `<span class="flag">Needs a check-in</span>` : ""}</div>
+        <button class="rm" data-coach="remove" data-id="${esc(c.id)}" data-name="${esc(c.name)}" aria-label="Remove ${esc(c.name)}">Remove</button></div>`;
+    }).join("");
+  }catch(e){ if(box()) box().innerHTML = `<p class="empty">Couldn't load your clients. ${esc(Cloud.coach.friendly(e))}</p>`; }
+}
+function confirmSheet(title, text, goLabel, go, data){
+  openSheet(title, `<p class="sub">${text}</p><button class="primary dangerbtn" data-coach="${go}" ${data||""}>${goLabel}</button><button class="primary" data-coach="back" ${GHOST}>Cancel</button>`);
+}
+document.addEventListener("click", async e=>{
+  const t = e.target.closest("[data-coach],[data-mode]"); if(!t || !Cloud.user) return;
+  if(t.dataset.mode){ if(t.dataset.mode==="coach") withCoach(openCoach); else closeBuilder(); return; }
+  const g = t.dataset.coach, C = Cloud.coach, label = t.textContent;
+  const busy = text => { t.disabled = true; t.textContent = text; };
+  try{
+    if(g==="mine"){ withCoach(openMyCoach); return; }
+    if(g==="coach"){ withCoach(openCoach); return; }
+    if(g==="retry"){ withCoach(COACHNEXT==="mine" ? openMyCoach : openCoach); return; }
+    if(g==="back"){ (COACHNEXT==="mine" ? openMyCoach : openCoach)(); return; }
+    if(g==="start"){ busy("Turning on…"); COACH.profile = await C.start(); renderModeSwitch(); openCoach(); showToast("Coach mode is on. Share your invite code with clients.", true); return; }
+    if(g==="copy"){ try{ await navigator.clipboard.writeText(prettyCode(COACH.profile.code)); showToast("Code copied."); }catch(x){ showToast("Couldn't copy. Press and hold the code to copy it."); } return; }
+    if(g==="share"){ try{ await navigator.share({title:"Train with me on Adonis", text:`I'm coaching on Adonis. In the app, open the menu, tap Your coach and enter my invite code: ${prettyCode(COACH.profile.code)}`, url: location.origin + location.pathname}); }catch(x){} return; }
+    if(g==="newcode"){ confirmSheet("New invite code", "Your current code stops working. Clients already linked to you stay linked.", "Make a new code", "newcode-go"); return; }
+    if(g==="newcode-go"){ busy("Making a new code…"); const code = await C.newCode(); COACH.profile = {...COACH.profile, code}; openCoach(); showToast("New code ready.", true); return; }
+    if(g==="remove"){ const n = t.dataset.name; confirmSheet("Remove client", `${esc(n)} will be unlinked and you'll lose access to their logs right away. Their data stays in their account.`, `Remove ${esc(n)}`, "remove-go", `data-id="${esc(t.dataset.id)}" data-name="${esc(n)}"`); return; }
+    if(g==="remove-go"){ busy("Removing…"); await C.unlink(t.dataset.id); openCoach(); showToast(`${t.dataset.name} was removed.`); return; }
+    if(g==="stop"){ confirmSheet("Turn off coach mode", "This unlinks all your clients and retires your invite code. Your own training isn't affected, and you can turn coach mode back on anytime with a new code.", "Turn off coach mode", "stop-go"); return; }
+    if(g==="stop-go"){ busy("Turning off…"); await C.stop(); COACH.profile = null; renderModeSwitch(); closeBuilder(); showToast("Coach mode is off."); return; }
+    if(g==="unlink"){ const n = COACH.mine.name; confirmSheet("Unlink coach", `${esc(n)} will lose access to your logs right away. Your data stays in your account, and you can link again with their code.`, `Unlink from ${esc(n)}`, "unlink-go"); return; }
+    if(g==="unlink-go"){ busy("Unlinking…"); const n = COACH.mine.name; await C.unlink(COACH.mine.id); COACH.mine = null; openMyCoach(); showToast(`Unlinked from ${n}.`); return; }
+  }catch(x){ t.disabled = false; t.textContent = label; showToast(C.friendly(x)); }
+});
+document.addEventListener("submit", async e=>{
+  const f = e.target.closest("form[data-coachf]"); if(!f) return;
+  e.preventDefault();
+  const err = f.querySelector(".err"), btn = f.querySelector("button[type=submit]"), label = btn.textContent;
+  err.textContent = ""; btn.disabled = true; btn.textContent = "Linking…";
+  try{ const m = await Cloud.coach.link($("#co-code").value); COACH.mine = {...m, linked: Date.now()}; openMyCoach(); showToast(`You're linked to ${m.name}.`, true); }
+  catch(x){ err.textContent = Cloud.coach.friendly(x); btn.disabled = false; btn.textContent = label; }
+});
 function afterCloud(){
   try{ localStorage.setItem("adonis-v1", JSON.stringify(S)); }catch(e){}
   if($("#builder").hidden && $("#focus").hidden) render();
@@ -2928,14 +3061,14 @@ const CloudApp = {
   applyMain(m){ S = fromObj({...m, days:S.days}); afterCloud(); },
   applyDays(o){ Object.assign(S.days, o); afterCloud(); },
   wipeDays(){ S.days = {}; afterCloud(); },
-  reset(){ S = fromObj({}); try{ localStorage.removeItem("adonis-v1"); }catch(e){} cur = todayStr(); tab = "today"; bsub = ""; MEALPOS = {key:"", i:0}; render(); },
+  reset(){ clearCoach(); S = fromObj({}); try{ localStorage.removeItem("adonis-v1"); }catch(e){} cur = todayStr(); tab = "today"; bsub = ""; MEALPOS = {key:"", i:0}; render(); },
   askMerge(){ return new Promise(res=>{ mergeResolve = res; showAuth("merge"); }); },
   onStatus(){ const el = $("#syncline"); if(el) el.innerHTML = syncLine(); },
   onAuth(u, phase, msg){
     if(!u){ if($("#auth").hidden) showAuth(Cloud.claimed ? "signin" : "signup"); return; }
     if(phase==="loading"){ showAuth("loading"); return; }
     if(phase==="error"){ showAuth("error", {msg}); return; }
-    if(phase==="ready"){ const wasShowing = hideAuth(); render(); if(wasShowing) showToast(`Signed in${u.displayName ? ` as ${u.displayName}` : ""}. Everything now saves to your account.`, true); }
+    if(phase==="ready"){ loadCoach(); const wasShowing = hideAuth(); render(); if(wasShowing) showToast(`Signed in${u.displayName ? ` as ${u.displayName}` : ""}. Everything now saves to your account.`, true); }
   }
 };
 
