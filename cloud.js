@@ -10,9 +10,11 @@
  *   users/{uid}/days/{date}   { j: JSON of that day's log, t }
  * Data is stored as JSON text so Firestore never has to understand the app's shapes (it rejects nested arrays).
  *
- * Coaching (Cloud.coach): one login can also be a coach. A coach gets an invite code; a client enters it to link.
- *   coaches/{uid}, invites/{code}, links/{coachUid_clientUid}. While linked, the coach can read the client's
- *   users/{uid} tree (never change it) and write only users/{uid}/coach/. Either side can unlink.
+ * Coaching (Cloud.coach): one login can also be a coach, once they activate coach access with a one-time code an
+ *   admin issues (coachKeys/{key}; admins/{uid} are made by hand in the console). An active coach gets an invite
+ *   code; a client enters it to link: coaches/{uid}, invites/{code}, links/{coachUid_clientUid}. While linked and
+ *   active, the coach can read the client's users/{uid} tree (never change it) and write only users/{uid}/coach/.
+ *   Either side can unlink. Only an admin (or later, a payment server) can switch a coach's access off.
  */
 (function () {
   "use strict";
@@ -176,19 +178,24 @@
   /* ---------- coaching: invite codes and client links (rules in firestore.rules) ---------- */
   // no 0/O or 1/I, so a code read aloud or off a screen can't be mistyped
   const CODE_ABC = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  function newCode() {
-    const r = new Uint32Array(8);
-    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(r); else for (let i = 0; i < 8; i++) r[i] = Math.floor(Math.random() * 4294967296);
-    let s = ""; for (let i = 0; i < 8; i++) s += CODE_ABC[r[i] % CODE_ABC.length];
+  function randCode(n) {
+    const r = new Uint32Array(n);
+    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(r); else for (let i = 0; i < n; i++) r[i] = Math.floor(Math.random() * 4294967296);
+    let s = ""; for (let i = 0; i < n; i++) s += CODE_ABC[r[i] % CODE_ABC.length];
     return s;
   }
+  const newCode = () => randCode(8);          // client invite codes
   function cleanCode(s) { return String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
   function coachErr(code, msg) { const e = new Error(msg); e.code = "coach/" + code; e.coachMsg = msg; return e; }
+  const denied = e => /permission-denied/.test((e && e.code) || "");
   const CR = {
     coach: () => FB.doc(db, "coaches", user.uid),
     invite: c => FB.doc(db, "invites", c),
     links: () => FB.collection(db, "links"),
     link: id => FB.doc(db, "links", id),
+    admin: () => FB.doc(db, "admins", user.uid),
+    keys: () => FB.collection(db, "coachKeys"),
+    key: k => FB.doc(db, "coachKeys", k),
   };
   async function linksWhere(field) {
     const snap = await FB.getDocs(FB.query(CR.links(), FB.where(field, "==", user.uid)));
@@ -204,26 +211,53 @@
   }
   const Coach = {
     cleanCode,
-    // this person's coach profile, or null if they haven't turned on coach mode
+    // this person's coach access, or null. active = they've activated coach mode (an admin can switch it off)
     async profile() {
       const s = await FB.getDoc(CR.coach());
       return s.exists() ? s.data() : null;
     },
-    // a fresh code can (very rarely) collide with someone else's; the rules refuse that write, so try another
-    async start() {
-      const had = await Coach.profile(); if (had) return had;     // already a coach: never orphan the old code
+    // admins are made by hand in the Firebase console (admins/{uid}); they issue activation codes
+    async isAdmin() {
+      try { return (await FB.getDoc(CR.admin())).exists(); } catch (e) { return false; }
+    },
+    // coach access: claim a one-time activation code (an admin can switch it on without one), then get an invite code
+    async activate(raw) {
+      const p = await Coach.profile();
+      if (p && p.active) return Coach.start();
       const name = user.displayName || "Your coach";
+      if (!cleanCode(raw) && await Coach.isAdmin()) {
+        await FB.setDoc(CR.coach(), { name, code: (p && p.code) || "", key: "admin", active: true, activated: FB.serverTimestamp() });
+        return Coach.start();
+      }
+      const key = cleanCode(raw);
+      if (key.length !== 12) throw coachErr("bad-key", "Activation codes are 12 letters and numbers. Check it and try again.");
+      const k = await FB.getDoc(CR.key(key));
+      if (!k.exists()) throw coachErr("no-key", "That activation code isn't valid. Check it and try again.");
+      if (k.data().usedBy) throw coachErr("used-key", "That activation code has already been used. Each code works once.");
+      const b = FB.writeBatch(db);
+      b.set(CR.key(key), { ...k.data(), usedBy: user.uid, usedName: name, usedAt: FB.serverTimestamp() });
+      b.set(CR.coach(), { name, code: (p && p.code) || "", key, active: true, activated: FB.serverTimestamp() });
+      await b.commit();
+      return Coach.start();
+    },
+    // make sure an active coach has an invite code. A fresh code can (very rarely) collide with someone else's;
+    // the rules refuse that write, so try another
+    async start() {
+      const p = await Coach.profile();
+      if (!p || !p.active) throw coachErr("not-active", "Coach mode needs an activation code first.");
+      if (p.code) return p;
+      const name = user.displayName || p.name || "Your coach";
       for (let i = 0; i < 4; i++) {
         const code = newCode(), b = FB.writeBatch(db);
         b.set(CR.invite(code), { coach: user.uid, name, created: FB.serverTimestamp() });
-        b.set(CR.coach(), { name, code, created: FB.serverTimestamp() });
-        try { await b.commit(); return { name, code }; }
-        catch (e) { if (!/permission-denied/.test((e && e.code) || "") || i === 3) throw e; }
+        b.set(CR.coach(), { ...p, name, code });
+        try { await b.commit(); return { ...p, name, code }; }
+        catch (e) { if (!denied(e) || i === 3) throw e; }
       }
     },
     // retire the old code (people already linked stay linked) and hand out a new one
     async newCode() {
-      const p = await Coach.profile(); if (!p) throw coachErr("not-coach", "Coach mode isn't on.");
+      const p = await Coach.profile(); if (!p || !p.active) throw coachErr("not-active", "Coach mode isn't on.");
       const name = user.displayName || p.name || "Your coach";
       for (let i = 0; i < 4; i++) {
         const code = newCode(), b = FB.writeBatch(db);
@@ -231,17 +265,34 @@
         b.set(CR.invite(code), { coach: user.uid, name, created: FB.serverTimestamp() });
         b.set(CR.coach(), { ...p, name, code });
         try { await b.commit(); return code; }
-        catch (e) { if (!/permission-denied/.test((e && e.code) || "") || i === 3) throw e; }
+        catch (e) { if (!denied(e) || i === 3) throw e; }
       }
     },
-    // turning coach mode off unlinks every client and retires the code
+    // turning coach mode off unlinks every client and retires the invite code; coach access stays activated,
+    // so turning it back on needs no new activation code
     async stop() {
       const p = await Coach.profile(), mine = await linksWhere("coach");
       const refs = mine.map(l => CR.link(l.id));
       if (p && p.code) refs.push(CR.invite(p.code));
-      refs.push(CR.coach());
       await deleteAll(refs);
+      if (p && p.code) await FB.setDoc(CR.coach(), { ...p, code: "" });
     },
+    /* admin: one-time activation codes for coach access (later a payment could issue these instead) */
+    async makeKey(note) {
+      for (let i = 0; i < 4; i++) {
+        const key = randCode(12);
+        if ((await FB.getDoc(CR.key(key))).exists()) continue;
+        await FB.setDoc(CR.key(key), { note: String(note || "").trim().slice(0, 80), created: FB.serverTimestamp(), usedBy: null, usedName: "", usedAt: null });
+        return key;
+      }
+      throw coachErr("key-fail", "Couldn't make a code. Try again.");
+    },
+    async listKeys() {
+      const snap = await FB.getDocs(CR.keys()), out = [];
+      snap.forEach(s => { const d = s.data(); out.push({ key: s.id, note: d.note || "", created: tms(d.created), used: !!d.usedBy, usedName: d.usedName || "", usedAt: tms(d.usedAt) }); });
+      return out.sort((a, b) => b.created - a.created);
+    },
+    async deleteKey(key) { await deleteAll([CR.key(key)]); },
     // the coach's clients, each with how recently they logged (read straight from the client's account)
     // days7 = how many of the last 7 calendar days (today included) have something logged
     async roster() {

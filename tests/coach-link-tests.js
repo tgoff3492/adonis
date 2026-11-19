@@ -18,11 +18,20 @@ const ST = { __st: true };
 function resolve(data) { const o = {}; for (const k in data) o[k] = data[k] === ST ? Ts(++server.clock) : data[k]; return o; }
 function denied() { const e = new Error("permission-denied"); e.code = "permission-denied"; return e; }
 
-/* JavaScript copy of firestore.rules. op: get | list | create | update | delete */
-function rulesAllow(uid, op, p, next, prev, filters) {
+/* JavaScript copy of firestore.rules. op: get | list | create | update | delete.
+   prev = the doc before this write, next = after; after(path) = a doc as it will be once the whole batch lands
+   (getAfter in the rules); server.docs is the state before the batch (get in the rules). */
+const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+const changed = (next, prev) => [...new Set([...Object.keys(next || {}), ...Object.keys(prev || {})])].filter(k => !same((next || {})[k], (prev || {})[k]));
+const onlyChanged = (next, prev, keys) => changed(next, prev).every(k => keys.includes(k));
+function rulesAllow(uid, op, p, next, prev, filters, after) {
+  after = after || (q => server.docs.get(q));
+  const before = q => server.docs.get(q);
   const seg = p.split("/");
-  const coachOf = client => !!uid && server.docs.has(`links/${uid}_${client}`);
   const me = x => !!uid && uid === x;
+  const isAdmin = () => !!uid && server.docs.has(`admins/${uid}`);
+  const activeCoach = x => !!before(`coaches/${x}`) && before(`coaches/${x}`).active === true;
+  const coachOf = client => !!uid && server.docs.has(`links/${uid}_${client}`) && activeCoach(uid);
   if (seg[0] === "users") {
     const owner = seg[1];
     if (seg.length === 2 || seg[2] === "state" || seg[2] === "days") {
@@ -36,14 +45,30 @@ function rulesAllow(uid, op, p, next, prev, filters) {
     }
     return false;
   }
+  if (seg[0] === "admins") return op === "get" && me(seg[1]);
+  if (seg[0] === "coachKeys") {
+    const key = seg[1];
+    if (op === "get") return !!uid;
+    if (op === "list" || op === "delete") return isAdmin();
+    if (op === "create") return isAdmin() && /^[A-Z0-9]{12}$/.test(key) && next.usedBy === null;
+    if (op === "update") return isAdmin() || (!!uid && prev.usedBy === null && next.usedBy === uid
+      && onlyChanged(next, prev, ["usedBy", "usedName", "usedAt"]) && !!after(`coaches/${uid}`) && after(`coaches/${uid}`).key === key);
+    return false;
+  }
   if (seg[0] === "coaches") {
-    if (op === "get" || op === "list" || op === "delete") return me(seg[1]);
-    return me(seg[1]) && typeof next.code === "string";
+    const who = seg[1];
+    if (op === "get" || op === "list") return me(who) || isAdmin();
+    if (op === "delete") return me(who) || isAdmin();
+    const kb = next && typeof next.key === "string" ? before(`coachKeys/${next.key}`) : null;
+    const ka = next && typeof next.key === "string" ? after(`coachKeys/${next.key}`) : null;
+    const activating = isAdmin() || (me(who) && next.active === true && !!kb && kb.usedBy === null && !!ka && ka.usedBy === who);
+    if (op === "create") return activating;
+    return activating || (me(who) && onlyChanged(next, prev, ["name", "code"]));
   }
   if (seg[0] === "invites") {
     if (op === "get") return !!uid;
     if (op === "list") return false;
-    if (op === "create") return !!uid && /^[A-Z0-9]{8}$/.test(seg[1]) && next.coach === uid;
+    if (op === "create") return !!uid && /^[A-Z0-9]{8}$/.test(seg[1]) && next.coach === uid && !!after(`coaches/${uid}`) && after(`coaches/${uid}`).active === true;
     if (op === "delete") return !!uid && !!prev && prev.coach === uid;
     return false;
   }
@@ -53,7 +78,7 @@ function rulesAllow(uid, op, p, next, prev, filters) {
     if (op === "create") {
       const inv = server.docs.get(`invites/${next.code}`);
       return !!uid && next.client === uid && next.coach !== uid && seg[1] === `${next.coach}_${uid}`
-        && typeof next.code === "string" && !!inv && inv.coach === next.coach;
+        && typeof next.code === "string" && !!inv && inv.coach === next.coach && activeCoach(next.coach);
     }
     return false;
   }
@@ -65,13 +90,20 @@ function makeFB() {
   const uid = () => auth.currentUser && auth.currentUser.uid;
   function emit() { const u = auth.currentUser; auth.listeners.forEach(cb => setTimeout(() => cb(u), 0)); }
   function userObj(rec) { return { uid: rec.uid, email: rec.email, get displayName() { return rec.displayName; }, metadata: {} }; }
-  function writeOp(kind, ref, data) {
-    const prev = server.docs.get(ref.path);
-    const op = kind === "del" ? "delete" : prev ? "update" : "create";
-    if (op === "delete" && !prev) { if (!rulesAllow(uid(), "delete", ref.path, null, null)) throw denied(); return () => {}; }
-    const next = kind === "del" ? null : resolve(data);
-    if (!rulesAllow(uid(), op, ref.path, next, prev)) throw denied();
-    return () => (kind === "del" ? server.docs.delete(ref.path) : server.docs.set(ref.path, next));
+  // a set of writes lands all together or not at all; each is checked with the before and after state
+  function commitAll(ops) {
+    const after = new Map(server.docs);
+    const planned = ops.map(([kind, ref, data]) => {
+      const next = kind === "del" ? null : resolve(data);
+      if (kind === "del") after.delete(ref.path); else after.set(ref.path, next);
+      return { kind, ref, next };
+    });
+    for (const w of planned) {
+      const prev = server.docs.get(w.ref.path);
+      const op = w.kind === "del" ? "delete" : prev ? "update" : "create";
+      if (!rulesAllow(uid(), op, w.ref.path, w.next, prev || null, null, q => after.get(q))) throw denied();
+    }
+    server.docs = after;
   }
   return {
     initializeApp: () => ({}), indexedDBLocalPersistence: {}, browserLocalPersistence: {},
@@ -111,11 +143,11 @@ function makeFB() {
       }
       return { forEach: cb => out.forEach(cb), size: out.length };
     },
-    async setDoc(ref, data, opt) { const prev = opt && opt.merge ? server.docs.get(ref.path) || {} : {}; writeOp("set", ref, { ...prev, ...data })(); },
+    async setDoc(ref, data, opt) { const prev = opt && opt.merge ? server.docs.get(ref.path) || {} : {}; commitAll([["set", ref, { ...prev, ...data }]]); },
     writeBatch() {
       const ops = [];
       return { set: (r, d) => ops.push(["set", r, d]), delete: r => ops.push(["del", r]),
-        async commit() { const apply = ops.map(([k, r, d]) => writeOp(k, r, d)); apply.forEach(f => f()); } };   // all or nothing
+        async commit() { commitAll(ops); } };
     },
   };
 }
@@ -153,17 +185,58 @@ const dayLog = (date, n) => ({ date, food: [{ name: "Eggs", p: n }], lifts: {}, 
   const K = coach.C.coach, J = client.C.coach, O = other.C.coach;
   const cu = coach.C.user.uid, ju = client.C.user.uid;
 
-  /* turning on coach mode */
-  check("not a coach before turning it on", (await K.profile()) === null);
-  const prof = await K.start();
-  check("coach mode gives an 8-character code", /^[A-HJ-NP-Z2-9]{8}$/.test(prof.code), prof.code);
+  /* coach access is locked: only with a one-time activation code from an admin */
+  const admin = phone();
+  await admin.C.signUp("TJ", "admin@example.com", "password1"); await admin.until("ready");
+  const A = admin.C.coach, au = admin.C.user.uid;
+  check("nobody is an admin until made one in the console", !(await A.isAdmin()));
+  server.docs.set(`admins/${au}`, {});
+  check("admin is recognized", await A.isAdmin());
+  check("a regular person isn't an admin", !(await K.isAdmin()));
+
+  check("not a coach before activating", (await K.profile()) === null);
+  let e = await rejects(K.start());
+  check("can't get an invite code without activating", e && /activation code/.test(K.friendly(e)));
+  e = await rejects(K.activate(""));
+  check("a regular person can't activate without a code", e && /12 letters/.test(K.friendly(e)));
+  e = await rejects(K.activate("ZZZZ-ZZZZ-ZZZZ"));
+  check("made-up activation code refused", e && /isn't valid/.test(K.friendly(e)));
+  e = await rejects(K.makeKey("me"));
+  check("a regular person can't make activation codes", e && /permission/.test(e.code || ""));
+  e = await rejects(K.listKeys());
+  check("a regular person can't list activation codes", e && /permission/.test(e.code || ""));
+
+  // trying to skip the code by writing straight to the database
+  const fbK = coach.C, rawWrite = (path, data) => rulesAllow(cu, server.docs.has(path) ? "update" : "create", path, data, server.docs.get(path) || null);
+  check("rules: can't switch on coach access by hand", !rawWrite(`coaches/${cu}`, { name: "Taylor", code: "", key: "admin", active: true }));
+  check("rules: can't make an invite code without coach access", !rulesAllow(cu, "create", "invites/ABCDEFGH", { coach: cu }, null));
+
+  const key = await A.makeKey("Taylor, Dallas gym");
+  check("admin makes a 12-character activation code", /^[A-HJ-NP-Z2-9]{12}$/.test(key), key);
+  const keys1 = await A.listKeys();
+  check("admin sees the new code, unused", keys1.length === 1 && !keys1[0].used && keys1[0].note === "Taylor, Dallas gym");
+  check("rules: can't claim a code without turning on coach access in the same write", !rulesAllow(cu, "update", `coachKeys/${key}`,
+    { ...server.docs.get(`coachKeys/${key}`), usedBy: cu }, server.docs.get(`coachKeys/${key}`)));
+
+  const prof = await K.activate(key.slice(0, 4).toLowerCase() + " " + key.slice(4, 8) + "-" + key.slice(8));
+  check("activating with a code (any spacing or case) turns on coach mode", prof && prof.active === true);
+  check("activation gives an 8-character invite code", /^[A-HJ-NP-Z2-9]{8}$/.test(prof.code), prof.code);
   check("invite points at the coach", server.docs.get(`invites/${prof.code}`).coach === cu);
-  check("profile saved with the code", (await K.profile()).code === prof.code);
-  check("turning it on again keeps the same code", (await K.start()).code === prof.code);
+  check("activating again keeps the same invite code", (await K.activate("")).code === prof.code);
+  const keys2 = await A.listKeys();
+  check("admin sees who used the code", keys2[0].used && keys2[0].usedName === "Taylor");
+  e = await rejects(O.activate(key));
+  check("a used activation code can't be used again", e && /already been used/.test(O.friendly(e)));
   check("codes are cleaned of spaces, dashes and case", K.cleanCode(" ab cd-ef gh ") === "ABCDEFGH");
 
+  const adminProf = await A.activate("");
+  check("an admin can switch on coach mode without a code", adminProf && adminProf.active && adminProf.code.length === 8);
+  const spare = await A.makeKey("");
+  await A.deleteKey(spare);
+  check("admin can cancel an unused code", (await A.listKeys()).every(k => k.key !== spare));
+
   /* bad codes */
-  let e = await rejects(J.link("ABC"));
+  e = await rejects(J.link("ABC"));
   check("short code refused with a clear message", e && /8 letters/.test(J.friendly(e)));
   e = await rejects(J.link("ZZZZZZZZ"));
   check("unknown code refused with a clear message", e && /No coach has that code/.test(J.friendly(e)));
@@ -223,15 +296,30 @@ const dayLog = (date, n) => ({ date, food: [{ name: "Eggs", p: n }], lifts: {}, 
   await K.unlink(r2[0].id);
   check("coach can remove a client", (await K.roster()).length === 0 && (await O.mine()) === null);
 
-  /* turning coach mode off */
+  /* an admin (or later, a lapsed payment) switches coach access off: access ends at once */
   await J.link(code2);
+  check("relinked", (await K.roster()).length === 1 && (await K.roster())[0].ok);
+  server.docs.set(`coaches/${cu}`, { ...server.docs.get(`coaches/${cu}`), active: false });   // what an admin's switch does
+  check("rules: switched-off coach can't read clients", !rulesAllow(cu, "list", `users/${ju}/days/x`, null, null));
+  check("switched-off coach's roster can't load logs", (await K.roster()).every(r => !r.ok));
+  check("rules: switched-off coach can't switch themselves back on", !rawWrite(`coaches/${cu}`, { ...server.docs.get(`coaches/${cu}`), active: true }));
+  check("(the other person has no coach right now)", (await O.mine()) === null);
+  e = await rejects(O.link(code2));
+  check("nobody new can link to a switched-off coach", e && /permission/.test(e.code || ""), e && e.message);
+  check("rules: admin can switch a coach back on", rulesAllow(au, "update", `coaches/${cu}`, { ...server.docs.get(`coaches/${cu}`), active: true }, server.docs.get(`coaches/${cu}`)));
+  server.docs.set(`coaches/${cu}`, { ...server.docs.get(`coaches/${cu}`), active: true });
+
+  /* turning coach mode off: clients unlinked, code retired, activation kept */
   await K.stop();
-  check("coach mode off: profile gone", (await K.profile()) === null);
-  check("coach mode off: code retired", !server.docs.has(`invites/${code2}`));
   check("coach mode off: clients unlinked", (await J.mine()) === null);
+  check("coach mode off: code retired", !server.docs.has(`invites/${code2}`));
+  const kept = await K.profile();
+  check("coach mode off: still activated, no code", kept && kept.active === true && kept.code === "");
+  const back = await K.activate("");
+  check("turning it back on needs no new activation code", back && back.code && back.code !== code2);
 
   /* deleting an account cleans up its links */
-  const p3 = await K.start();
+  const p3 = await K.profile();
   await J.link(p3.code);
   await client.C.deleteAccount("password1");
   check("deleted client: link removed", ![...server.docs.keys()].some(k => k.startsWith("links/")));

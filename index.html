@@ -2492,13 +2492,13 @@ function checkBodyWins(d, what){
 
 /* ---------- account menu: reset plans, send feedback ---------- */
 const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
-const APP_VERSION = "2026.11.19";   // bump with the cache VERSION in sw.js on every release
+const APP_VERSION = "2026.11.19.2";   // bump with the cache VERSION in sw.js on every release
 function openMenu(){
   const u = Cloud.user;
   openSheet("Your Adonis", `<div class="sheetbrand"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></div><div class="menu-list">
     ${u ? `<button class="menu-item" data-menu="account"><span class="avatar" aria-hidden="true">${esc(initial(u))}</span><span>${esc(u.displayName || "Your account")}<small>${esc(u.email || "")}</small></span></button>` : ""}
     ${u ? `<button class="menu-item" data-coach="mine"><span>Your coach<small>${COACH.mine ? `Linked to ${esc(COACH.mine.name)}` : "Have a trainer? Enter their invite code"}</small></span></button>
-    <button class="menu-item" data-coach="coach"><span>Coach mode<small>${COACH.profile ? "Your clients and invite code" : "Coach clients from this same login"}</small></span></button>` : ""}
+    <button class="menu-item" data-coach="coach"><span>Coach mode<small>${coachOn() ? "Your clients and invite code" : "For trainers with an activation code"}</small></span></button>` : ""}
     <button class="menu-item" data-menu="feedback"><span>Send feedback<small>Tell us what's working and what isn't</small></span></button>
     <button class="menu-item" data-menu="backup"><span>Save a backup<small>${u ? "Optional, since your account saves everything" : S.settings.lastBackup?`Last backup: ${esc(parse(S.settings.lastBackup).toLocaleDateString(undefined,{month:"short",day:"numeric"}))}`:"No backup yet"}</small></span></button>
     <button class="menu-item" data-menu="restore"><span>Restore from backup<small>Load a backup file, like when you get a new phone</small></span></button>
@@ -2939,19 +2939,22 @@ function openAccount(){
   Cloud.syncNow();
 }
 /* ---------- coaching: link to a coach, coach mode (cloud.js Cloud.coach does the Firebase work) ---------- */
-let COACH = {uid:"", profile:null, mine:null, loaded:false};
+// coach access is locked: it takes a one-time activation code from an admin (admins/{uid}, made in the Firebase console)
+let COACH = {uid:"", profile:null, mine:null, admin:false, loaded:false};
 async function loadCoach(){
   const u = Cloud.user; if(!u || !Cloud.coach) return false;
   try{
-    const [profile, mine] = await Promise.all([Cloud.coach.profile(), Cloud.coach.mine()]);
+    const [profile, mine, admin] = await Promise.all([Cloud.coach.profile(), Cloud.coach.mine(), Cloud.coach.isAdmin()]);
     if(Cloud.user !== u) return false;
-    COACH = {uid:u.uid, profile, mine, loaded:true};
-  }catch(e){ COACH = {uid:u.uid, profile:null, mine:null, loaded:false}; }
+    COACH = {uid:u.uid, profile, mine, admin, loaded:true};
+  }catch(e){ COACH = {uid:u.uid, profile:null, mine:null, admin:false, loaded:false}; }
   renderModeSwitch();
   return COACH.loaded;
 }
-function clearCoach(){ COACH = {uid:"", profile:null, mine:null, loaded:false}; renderModeSwitch(); }
-function renderModeSwitch(){ const el = $("#modesw"); if(el) el.hidden = !(Cloud.user && COACH.profile); }
+function clearCoach(){ COACH = {uid:"", profile:null, mine:null, admin:false, loaded:false}; renderModeSwitch(); }
+const coachActive = () => !!(COACH.profile && COACH.profile.active);
+const coachOn = () => coachActive() && !!COACH.profile.code;
+function renderModeSwitch(){ const el = $("#modesw"); if(el) el.hidden = !(Cloud.user && coachOn()); }
 // coaching screens need fresh info from the account first; offline, say so instead of guessing
 async function withCoach(open){
   if(COACH.loaded && Cloud.user && COACH.uid === Cloud.user.uid){ open(); return; }
@@ -2961,6 +2964,7 @@ async function withCoach(open){
 }
 const fmtDay = ms => new Date(ms).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
 const prettyCode = c => c ? c.slice(0,4) + "-" + c.slice(4) : "";
+const prettyKey = k => k ? k.slice(0,4) + "-" + k.slice(4,8) + "-" + k.slice(8) : "";
 const firstLetter = n => esc(((n || "?").trim().charAt(0) || "?").toUpperCase());
 let COACHNEXT = "coach";
 function openMyCoach(){
@@ -2982,11 +2986,23 @@ function openMyCoach(){
 function openCoach(){
   COACHNEXT = "coach";
   const p = COACH.profile;
-  if(!p){
-    openSheet("Coach mode", `<div class="acct"><p class="sub">Coach clients from the same login you train with. You get an invite code to share, and clients who enter it are linked to you so you can see how their training is going.</p>
-      <div class="card"><p style="margin:0 0 6px"><b>Your own training stays separate.</b> Switch between My training and Coach at the top of the app.</p>
-      <p class="tip" style="margin:0">You can see your clients' logs but never change them, and clients can unlink anytime.</p></div>
-      <button class="primary" data-coach="start">Turn on coach mode</button></div>`);
+  if(!coachActive()){
+    const off = p && p.active === false && p.key;
+    openSheet("Coach mode", `<div class="acct"><p class="sub">Coach mode is for trainers and coaches. You get an invite code to share, and clients who enter it are linked to you so you can see how their training is going.</p>
+      ${off ? `<div class="card"><p style="margin:0"><b>Your coach access is switched off.</b> Get in touch to turn it back on, or enter a new activation code.</p></div>` : ""}
+      ${COACH.admin ? `<button class="primary" data-coach="start">Turn on coach mode</button><p class="tip">You're an admin, so you don't need an activation code.</p>`
+      : `<form class="card" data-coachf="activate" novalidate><div class="field"><label for="co-key">Activation code</label><input id="co-key" class="codein" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="16" placeholder="ABCD-EFGH-2345"></div>
+        <div class="err" role="alert"></div><button class="primary" type="submit">Activate coach mode</button></form>
+        <p class="tip">Your own training stays separate. You switch between My training and Coach at the top of the app.</p>
+        <button class="primary" data-coach="request" ${GHOST}>Request coach access</button>`}</div>
+      ${COACH.admin ? keysHTML() : ""}`);
+    if(COACH.admin) loadKeys();
+    return;
+  }
+  if(!p.code){
+    openSheet("Coach mode", `<div class="acct"><p class="sub">Coach mode is off. Turn it back on to get a new invite code. Clients you had before will need to link again.</p>
+      <button class="primary" data-coach="start">Turn coach mode back on</button></div>${COACH.admin ? keysHTML() : ""}`);
+    if(COACH.admin) loadKeys();
     return;
   }
   openSheet("Coach", `<div class="modesw" role="group" aria-label="Mode" style="margin:0 auto 16px;width:max-content"><button data-mode="me" aria-pressed="false">My training</button><button data-mode="coach" aria-pressed="true">Coach</button></div>
@@ -2995,10 +3011,32 @@ function openCoach(){
       <p class="tip" style="margin:0">Clients enter it in Adonis under the menu, then Your coach.</p>
       <div class="btnrow"><button data-coach="copy">Copy</button>${navigator.share ? `<button data-coach="share">Share</button>` : ""}<button data-coach="newcode">New code</button></div></div>
     <h3>Your clients</h3><div class="card" id="roster" aria-live="polite"><p class="empty">Loading your clients…</p></div>
+    ${COACH.admin ? keysHTML() : ""}
     <h3>Coach mode</h3>
     <button class="primary" data-coach="stop" ${GHOST}>Turn off coach mode</button>
-    <p class="tip">Turning it off unlinks all your clients and retires your code.</p></div>`);
+    <p class="tip">Turning it off unlinks all your clients and retires your invite code. You can turn it back on without a new activation code.</p></div>`);
   loadRoster();
+  if(COACH.admin) loadKeys();
+}
+/* admin only: one-time activation codes that unlock coach mode for someone */
+function keysHTML(){
+  return `<div class="acct"><h3>Coach activation codes</h3><p class="tip" style="margin-top:0">Only admins see this. Each code turns on coach mode for one person, once.</p>
+    <form class="card" data-coachf="makekey" novalidate><div class="field"><label for="key-note">Who it's for (optional)</label><input id="key-note" maxlength="80" autocomplete="off" placeholder="Name or gym"></div>
+    <div class="err" role="alert"></div><button class="primary" type="submit">Make an activation code</button></form>
+    <div class="card" id="keys" aria-live="polite"><p class="empty">Loading codes…</p></div></div>`;
+}
+async function loadKeys(){
+  const box = () => $("#keys");
+  try{
+    const list = await Cloud.coach.listKeys();
+    if(!box()) return;
+    if(!list.length){ box().innerHTML = `<p class="empty">No codes yet.</p>`; return; }
+    box().innerHTML = list.map(k=>{
+      const line = k.used ? `Used by ${k.usedName || "someone"}${k.usedAt ? ` on ${fmtDay(k.usedAt)}` : ""}` : `Unused${k.created ? ` · made ${fmtDay(k.created)}` : ""}`;
+      return `<div class="client" style="flex-wrap:wrap;row-gap:8px"><div class="nm" style="flex:1 1 100%"><b style="font-family:var(--display);letter-spacing:.08em;white-space:normal">${esc(prettyKey(k.key))}</b><small>${esc(k.note ? k.note + " · " + line : line)}</small></div>
+        ${k.used ? "" : `<div style="display:flex;gap:8px;margin-left:auto"><button class="rm" data-coach="copykey" data-key="${esc(k.key)}" aria-label="Copy code ${esc(prettyKey(k.key))}">Copy</button><button class="rm" data-coach="delkey" data-key="${esc(k.key)}" aria-label="Cancel code ${esc(prettyKey(k.key))}">Cancel</button></div>`}</div>`;
+    }).join("");
+  }catch(e){ if(box()) box().innerHTML = `<p class="empty">Couldn't load codes. ${esc(Cloud.coach.friendly(e))}</p>`; }
 }
 async function loadRoster(){
   const box = () => $("#roster");
@@ -3028,15 +3066,19 @@ document.addEventListener("click", async e=>{
     if(g==="coach"){ withCoach(openCoach); return; }
     if(g==="retry"){ withCoach(COACHNEXT==="mine" ? openMyCoach : openCoach); return; }
     if(g==="back"){ (COACHNEXT==="mine" ? openMyCoach : openCoach)(); return; }
-    if(g==="start"){ busy("Turning on…"); COACH.profile = await C.start(); renderModeSwitch(); openCoach(); showToast("Coach mode is on. Share your invite code with clients.", true); return; }
+    if(g==="start"){ busy("Turning on…"); COACH.profile = await C.activate(""); renderModeSwitch(); openCoach(); showToast("Coach mode is on. Share your invite code with clients.", true); return; }
+    if(g==="request"){ openSheet("Send feedback", feedbackHTML()); setTimeout(()=>{ const x = $("#fbtext"); if(x){ x.value = "I'd like coach access for Adonis.\nName:\nWhere I coach:\nAbout how many clients:"; x.focus(); } }, 50); return; }
+    if(g==="copykey"){ try{ await navigator.clipboard.writeText(prettyKey(t.dataset.key)); showToast("Activation code copied."); }catch(x){ showToast("Couldn't copy. Press and hold the code to copy it."); } return; }
+    if(g==="delkey"){ confirmSheet("Cancel activation code", `${esc(prettyKey(t.dataset.key))} will stop working. Nobody has used it yet.`, "Cancel this code", "delkey-go", `data-key="${esc(t.dataset.key)}"`); return; }
+    if(g==="delkey-go"){ busy("Cancelling…"); await C.deleteKey(t.dataset.key); openCoach(); showToast("Code cancelled."); return; }
     if(g==="copy"){ try{ await navigator.clipboard.writeText(prettyCode(COACH.profile.code)); showToast("Code copied."); }catch(x){ showToast("Couldn't copy. Press and hold the code to copy it."); } return; }
     if(g==="share"){ try{ await navigator.share({title:"Train with me on Adonis", text:`I'm coaching on Adonis. In the app, open the menu, tap Your coach and enter my invite code: ${prettyCode(COACH.profile.code)}`, url: location.origin + location.pathname}); }catch(x){} return; }
     if(g==="newcode"){ confirmSheet("New invite code", "Your current code stops working. Clients already linked to you stay linked.", "Make a new code", "newcode-go"); return; }
     if(g==="newcode-go"){ busy("Making a new code…"); const code = await C.newCode(); COACH.profile = {...COACH.profile, code}; openCoach(); showToast("New code ready.", true); return; }
     if(g==="remove"){ const n = t.dataset.name; confirmSheet("Remove client", `${esc(n)} will be unlinked and you'll lose access to their logs right away. Their data stays in their account.`, `Remove ${esc(n)}`, "remove-go", `data-id="${esc(t.dataset.id)}" data-name="${esc(n)}"`); return; }
     if(g==="remove-go"){ busy("Removing…"); await C.unlink(t.dataset.id); openCoach(); showToast(`${t.dataset.name} was removed.`); return; }
-    if(g==="stop"){ confirmSheet("Turn off coach mode", "This unlinks all your clients and retires your invite code. Your own training isn't affected, and you can turn coach mode back on anytime with a new code.", "Turn off coach mode", "stop-go"); return; }
-    if(g==="stop-go"){ busy("Turning off…"); await C.stop(); COACH.profile = null; renderModeSwitch(); closeBuilder(); showToast("Coach mode is off."); return; }
+    if(g==="stop"){ confirmSheet("Turn off coach mode", "This unlinks all your clients and retires your invite code. Your own training isn't affected, and you can turn coach mode back on anytime without a new activation code.", "Turn off coach mode", "stop-go"); return; }
+    if(g==="stop-go"){ busy("Turning off…"); await C.stop(); COACH.profile = {...COACH.profile, code:""}; renderModeSwitch(); closeBuilder(); showToast("Coach mode is off."); return; }
     if(g==="unlink"){ const n = COACH.mine.name; confirmSheet("Unlink coach", `${esc(n)} will lose access to your logs right away. Your data stays in your account, and you can link again with their code.`, `Unlink from ${esc(n)}`, "unlink-go"); return; }
     if(g==="unlink-go"){ busy("Unlinking…"); const n = COACH.mine.name; await C.unlink(COACH.mine.id); COACH.mine = null; openMyCoach(); showToast(`Unlinked from ${n}.`); return; }
   }catch(x){ t.disabled = false; t.textContent = label; showToast(C.friendly(x)); }
@@ -3044,10 +3086,19 @@ document.addEventListener("click", async e=>{
 document.addEventListener("submit", async e=>{
   const f = e.target.closest("form[data-coachf]"); if(!f) return;
   e.preventDefault();
+  const kind = f.dataset.coachf, C = Cloud.coach;
   const err = f.querySelector(".err"), btn = f.querySelector("button[type=submit]"), label = btn.textContent;
-  err.textContent = ""; btn.disabled = true; btn.textContent = "Linking…";
-  try{ const m = await Cloud.coach.link($("#co-code").value); COACH.mine = {...m, linked: Date.now()}; openMyCoach(); showToast(`You're linked to ${m.name}.`, true); }
-  catch(x){ err.textContent = Cloud.coach.friendly(x); btn.disabled = false; btn.textContent = label; }
+  err.textContent = ""; btn.disabled = true;
+  btn.textContent = kind==="link" ? "Linking…" : kind==="activate" ? "Activating…" : "Making a code…";
+  try{
+    if(kind==="link"){ const m = await C.link($("#co-code").value); COACH.mine = {...m, linked: Date.now()}; openMyCoach(); showToast(`You're linked to ${m.name}.`, true); }
+    if(kind==="activate"){ COACH.profile = await C.activate($("#co-key").value); renderModeSwitch(); openCoach(); showToast("Coach mode is on. Share your invite code with clients.", true); }
+    if(kind==="makekey"){
+      const key = await C.makeKey($("#key-note").value);
+      try{ await navigator.clipboard.writeText(prettyKey(key)); }catch(x){}
+      openCoach(); showToast(`Code ${prettyKey(key)} made and copied.`, true);
+    }
+  }catch(x){ err.textContent = C.friendly(x); btn.disabled = false; btn.textContent = label; }
 });
 function afterCloud(){
   try{ localStorage.setItem("adonis-v1", JSON.stringify(S)); }catch(e){}
