@@ -262,6 +262,25 @@ const dayLog = (date, n) => ({ date, food: [{ name: "Eggs", p: n }], lifts: {}, 
   check("coach sees the client in the roster", roster.length === 1 && roster[0].name === "Jordan", JSON.stringify(roster));
   check("roster shows a recent log", roster[0].lastLog > 0 && roster[0].days7 === 1, JSON.stringify(roster[0]));
 
+  /* coach sets targets and a pinned note; the client sees them */
+  client.S.nutri = { a: { goal: "cut" } }; client.C.touch(); await client.C.syncNow();
+  const cd = await K.clientData(ju);
+  check("coach reads the client's saved state", cd.main && cd.main.nutri && cd.main.nutri.a.goal === "cut", JSON.stringify(cd.main));
+  check("coach reads the client's recent days", cd.days[today] && cd.days[today].food.length === 1);
+  check("nothing set for the client yet", cd.coaching === null && (await J.myCoaching(await J.mine())) === null);
+  await K.setCoaching(ju, { targets: { protein: 190, carbs: 190, fat: 70, cal: 2150 }, letEdit: false });
+  await K.setCoaching(ju, { note: { text: "Log something every day this week.", t: Date.now() } });
+  const mc = await J.myCoaching(await J.mine());
+  check("client sees the coach's targets", mc && mc.targets.protein === 190 && mc.targets.cal === 2150, JSON.stringify(mc));
+  check("client sees the pinned note and who set it", mc.note && /every day/.test(mc.note.text) && mc.coachName === "Taylor");
+  check("saving the note kept the targets", mc.targets && mc.targets.fat === 70);
+  e = await rejects(O.setCoaching(ju, { note: { text: "hi", t: 1 } }));
+  check("someone who isn't their coach can't set targets or notes", e && /permission/.test(e.code || ""));
+  e = await rejects(J.setCoaching(ju, { targets: { protein: 999, carbs: 1, fat: 1, cal: 4009 } }));
+  check("a client can't set their own coach targets", e && /permission/.test(e.code || ""));
+  e = await rejects(O.clientData(ju));
+  check("someone who isn't their coach can't read the client", e && /permission/.test(e.code || ""));
+
   /* what the rules allow and block */
   const FBc = coach.C, FBo = other.C;
   check("rules: coach can read the linked client's days", rulesAllow(cu, "list", `users/${ju}/days/x`, null, null));
@@ -291,9 +310,12 @@ const dayLog = (date, n) => ({ date, food: [{ name: "Eggs", p: n }], lifts: {}, 
   /* unlinking */
   await J.unlink(mine.id);
   check("client can unlink", (await J.mine()) === null && (await K.roster()).length === 1);
+  check("unlinking clears the coach's targets and note", !server.docs.has(`users/${ju}/coach/main`));
   check("rules: coach loses access right after unlinking", !rulesAllow(cu, "list", `users/${ju}/days/x`, null, null));
   const r2 = await K.roster();
+  await K.setCoaching(r2[0].client, { note: { text: "Welcome!", t: Date.now() } });
   await K.unlink(r2[0].id);
+  check("removing a client clears what the coach set", !server.docs.has(`users/${r2[0].client}/coach/main`));
   check("coach can remove a client", (await K.roster()).length === 0 && (await O.mine()) === null);
 
   /* an admin (or later, a lapsed payment) switches coach access off: access ends at once */
@@ -310,7 +332,9 @@ const dayLog = (date, n) => ({ date, food: [{ name: "Eggs", p: n }], lifts: {}, 
   server.docs.set(`coaches/${cu}`, { ...server.docs.get(`coaches/${cu}`), active: true });
 
   /* turning coach mode off: clients unlinked, code retired, activation kept */
+  await K.setCoaching(ju, { targets: { protein: 180, carbs: 200, fat: 60, cal: 2060 } });
   await K.stop();
+  check("coach mode off: clients' targets and notes cleared", !server.docs.has(`users/${ju}/coach/main`));
   check("coach mode off: clients unlinked", (await J.mine()) === null);
   check("coach mode off: code retired", !server.docs.has(`invites/${code2}`));
   const kept = await K.profile();

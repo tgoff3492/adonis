@@ -479,6 +479,16 @@ body.resting .wrap{padding-bottom:200px}
 .client .rm{border:1px solid var(--line);background:var(--field);border-radius:20px;min-height:40px;padding:0 12px;font-size:14px;font-weight:600;cursor:pointer;color:var(--ink)}
 .flag{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:10px;margin-top:4px;border:1px solid var(--protein);color:var(--protein)}
 .codein{font:700 24px var(--display)!important;letter-spacing:.12em;text-transform:uppercase;text-align:center}
+.client .nmbtn{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:none;border:0;padding:0;margin:0;text-align:left;font:inherit;color:inherit;cursor:pointer;min-height:44px}
+.client .nmbtn .nm{flex:1}
+.client .nmbtn .chev{color:var(--muted);font-size:22px;line-height:1}
+.coachnote p{white-space:pre-line;margin:0}
+.field textarea{width:100%;box-sizing:border-box;min-height:96px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font:inherit;font-size:16px;line-height:1.4;resize:vertical}
+.coachby{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:12px;padding:2px 10px;margin-bottom:8px}
+.kcal{font-size:14px;color:var(--muted);margin:2px 0 6px}
+.kcal b{font:700 26px var(--display);color:var(--ink);margin-right:4px}
+.chk{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer}
+.chk input{width:20px;height:20px;accent-color:var(--ink)}
 
 /* body sub-tabs */
 .reclist{padding:4px 14px}
@@ -846,8 +856,10 @@ function isTrainingDay(d){
   const dd = dayDef(p.dn); return dd && !dd.rest;
 }
 function todayTargets(){ return targetsOn(cur); }
-function targetsOn(d){
-  const r = nutriNow(d);
+// own = Adonis's own numbers, ignoring anything a coach has set
+function targetsOn(d, own){
+  const r = nutriNow(d), ct = own ? null : coachTargets();
+  if(ct) return {cal:ct.cal, protein:ct.protein, carbs:ct.carbs, fat:ct.fat, r, coach:true};
   if(!r) return {cal:S.settings.cal, protein:S.settings.protein, carbs:S.settings.carbs, fat:S.settings.fat};
   const carbs = r.cycle && S.plan ? (isTrainingDay(d) ? r.carbsTrain : r.carbsRest) : r.carbs;
   return {cal: carbs===r.carbs ? r.cal : Math.round(r.protein*4 + carbs*4 + r.fat*9), protein:r.protein, carbs, fat:r.fat, r};
@@ -1037,14 +1049,26 @@ function goalLine(r){
 function renderEat(){
   const D = day(cur), t = totals(D), T = todayTargets(), r = T.r;
   let top = "";
-  if(!S.nutri){
+  const ct = COACHING && COACHING.targets, ownOn = ct && COACHING.letEdit && ownTargets();
+  const coachRow = !ct ? "" : T.coach
+    ? `<div class="coachby">Set by your coach, ${esc(COACHING.coachName)}</div>`
+    : `<div class="coachby">Using your own targets</div>`;
+  const coachActs = !ct || !COACHING.letEdit ? "" : T.coach
+    ? `<button class="linkbtn" data-coach="own-on">Use my own targets</button>`
+    : `<button class="linkbtn go" data-coach="own-off">Use my coach's targets</button>`;
+  if(T.coach && !S.nutri){
+    top = `<div class="nsum">${coachRow}<div class="big">${T.cal.toLocaleString()} <span class="k">calories a day</span></div>
+      <div class="k" style="margin-top:6px">Protein ${T.protein} g · Carbs ${T.carbs} g · Fat ${T.fat} g</div>
+      ${coachActs?`<div class="acts">${coachActs}</div>`:""}</div>`;
+  } else if(!S.nutri){
     top = `<h2>Let's set up your nutrition</h2><p class="sub">A few quick questions and Adonis sets your daily calories, protein, carbs and fat. It updates itself as your weight and training change.</p>
-      <button class="primary" data-act="nutri-edit" style="background:var(--protein);color:#fff">Set up my nutrition</button>`;
+      <button class="primary" data-act="nutri-edit" style="background:var(--protein);color:#fff">Set up my nutrition</button>${ct?`<div class="nsum">${coachRow}<div class="acts">${coachActs}</div></div>`:""}`;
   } else {
     const canCut = r.status!=="pregnant" && !(r.cut && !r.cut.done);
-    top = `${eatMessages(r)}<div class="nsum"><div class="k">${esc(goalLine(r))}${r.cycle&&S.plan?` · ${isTrainingDay(cur)?"Training day":"Rest day"} carbs`:""}</div>
+    top = `${eatMessages(r)}<div class="nsum">${coachRow}<div class="k">${esc(goalLine(r))}${r.cycle&&S.plan?` · ${isTrainingDay(cur)?"Training day":"Rest day"} carbs`:""}</div>
       <div class="big">${T.cal.toLocaleString()} <span class="k">calories today</span></div>
-      <div class="acts">${canCut?`<button class="linkbtn" data-act="start-cut">${r.goal==="cut"?"Set how long to cut":"Start a cut"}</button>`:""}${r.cut && !r.cut.done?`<button class="linkbtn" data-act="cut-end">End cut early</button>`:""}${r.status==="breastfeeding"?`<button class="linkbtn" data-act="bf-stop">Stopped breastfeeding</button>`:""}<button class="linkbtn" data-act="nutri-edit">Edit my answers</button><button class="linkbtn" data-act="nutri-why">How this is calculated</button></div>
+      <div class="acts">${canCut?`<button class="linkbtn" data-act="start-cut">${r.goal==="cut"?"Set how long to cut":"Start a cut"}</button>`:""}${r.cut && !r.cut.done?`<button class="linkbtn" data-act="cut-end">End cut early</button>`:""}${r.status==="breastfeeding"?`<button class="linkbtn" data-act="bf-stop">Stopped breastfeeding</button>`:""}${coachActs}<button class="linkbtn" data-act="nutri-edit">Edit my answers</button><button class="linkbtn" data-act="nutri-why">How this is calculated</button></div>
+      ${T.coach?`<p class="tip" style="margin:10px 0 0">Adonis's own estimate today: ${(()=>{ const o = targetsOn(cur, true); return `${o.cal.toLocaleString()} cal · ${o.protein} g protein`; })()}. Your coach's numbers are what count toward your goals.</p>`:""}
       <div id="why" hidden>${whyBlock(r)}</div></div>`;
   }
   const list = D.food.length ? D.food.map((f,i)=>`
@@ -2200,6 +2224,9 @@ function renderToday(){
   const tag = TAGLINES[(diff(cur, "2026-01-01") % TAGLINES.length + TAGLINES.length) % TAGLINES.length];
   let h = `<section class="hero"><div class="kick">${!S.plan ? "Welcome to Adonis" : p.before ? "Starting soon" : `Week ${p.week} of 4${isToday?"":` · ${esc(dn)}`}`}</div><h2 class="hl">${esc(head)}</h2><p class="tag">${esc(tag)}</p></section>`;
 
+  // pinned note from a coach
+  if(COACHING && COACHING.note && COACHING.note.text) h += `<div class="tcard coachnote"><div class="th"><b>From ${esc(COACHING.coachName)}</b>${COACHING.note.t?`<span>${esc(ago(COACHING.note.t))}</span>`:""}</div><p>${esc(COACHING.note.text)}</p></div>`;
+
   // workout
   if(!S.plan) h += `<div class="tcard"><div class="th"><b>Your training plan</b></div><p>Answer a few quick questions and Adonis builds a 4-week plan around your goal, schedule and equipment.</p><button class="primary" id="build" style="background:var(--protein);color:#fff">Build my plan</button></div>`;
   else if(p.before) h += `<div class="tcard"><div class="th"><b>Training</b></div><p>Your program starts ${esc(parse(S.settings.start).toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"}))}.</p></div>`;
@@ -2217,13 +2244,13 @@ function renderToday(){
   }
 
   // food
-  if(!S.nutri) h += `<div class="tcard"><div class="th"><b>Fuel</b></div><p>Set your daily calories and protein. It takes about a minute.</p><button class="linkbtn go" data-act="nutri-edit">Set up my nutrition</button></div>`;
+  if(!S.nutri && !coachTargets()) h += `<div class="tcard"><div class="th"><b>Fuel</b></div><p>Set your daily calories and protein. It takes about a minute.</p><button class="linkbtn go" data-act="nutri-edit">Set up my nutrition</button></div>`;
   else {
     const T = todayTargets(), t = totals(D);
     const meter = (lbl, val, target, color, unit) => { const left = Math.round(target - val);
       return `<div class="meter"><div class="ml"><b>${lbl}</b><span>${left>=0?`${left.toLocaleString()}${unit} left`:`${(-left).toLocaleString()}${unit} over`}</span></div><div class="mb"><i style="width:${Math.min(100, Math.round(val/(target||1)*100))}%;background:${color}"></i></div></div>`; };
     h += `<div class="tcard"><div class="th"><b>Fuel</b><span>${t.cal.toLocaleString()} of ${T.cal.toLocaleString()} cal</span></div>
-      ${meter("Protein", t.p, T.protein, "var(--protein)", " g")}${meter("Calories", t.cal, T.cal, "var(--cal)", "")}
+      ${T.coach?`<div class="coachby">Set by your coach</div>`:""}${meter("Protein", t.p, T.protein, "var(--protein)", " g")}${meter("Calories", t.cal, T.cal, "var(--cal)", "")}
       <div class="acts" style="margin-top:10px"><button class="linkbtn go" data-gotab="eat">Log food</button></div></div>`;
   }
 
@@ -2492,7 +2519,7 @@ function checkBodyWins(d, what){
 
 /* ---------- account menu: reset plans, send feedback ---------- */
 const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
-const APP_VERSION = "2026.11.19.2";   // bump with the cache VERSION in sw.js on every release
+const APP_VERSION = "2026.11.19.3";   // bump with the cache VERSION in sw.js on every release
 function openMenu(){
   const u = Cloud.user;
   openSheet("Your Adonis", `<div class="sheetbrand"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></div><div class="menu-list">
@@ -2941,17 +2968,36 @@ function openAccount(){
 /* ---------- coaching: link to a coach, coach mode (cloud.js Cloud.coach does the Firebase work) ---------- */
 // coach access is locked: it takes a one-time activation code from an admin (admins/{uid}, made in the Firebase console)
 let COACH = {uid:"", profile:null, mine:null, admin:false, loaded:false};
+// what this person's coach has set for them: {targets, letEdit, note, coachName}. Kept on the device for offline use.
+let COACHING = null;
+const COACHING_KEY = "adonis-coaching", OWN_KEY = "adonis-own-targets";
+function readCoachingCache(uid){ try{ const c = JSON.parse(localStorage.getItem(COACHING_KEY)); return c && c.uid===uid ? c.data : null; }catch(e){ return null; } }
+function ownTargets(){ try{ return localStorage.getItem(OWN_KEY)==="1"; }catch(e){ return false; } }
+function coachTargets(){ return COACHING && COACHING.targets && !(COACHING.letEdit && ownTargets()) ? COACHING.targets : null; }
+function setCoaching(uid, data){
+  const changed = JSON.stringify(data) !== JSON.stringify(COACHING);
+  COACHING = data;
+  try{ if(data) localStorage.setItem(COACHING_KEY, JSON.stringify({uid, data})); else localStorage.removeItem(COACHING_KEY); }catch(e){}
+  if(changed && $("#builder").hidden && $("#focus").hidden) render();
+}
+let COACH_AT = 0;
 async function loadCoach(){
   const u = Cloud.user; if(!u || !Cloud.coach) return false;
+  if(!COACHING) { const c = readCoachingCache(u.uid); if(c) setCoaching(u.uid, c); }
+  COACH_AT = Date.now();
   try{
     const [profile, mine, admin] = await Promise.all([Cloud.coach.profile(), Cloud.coach.mine(), Cloud.coach.isAdmin()]);
     if(Cloud.user !== u) return false;
     COACH = {uid:u.uid, profile, mine, admin, loaded:true};
+    const coaching = await Cloud.coach.myCoaching(mine);
+    if(Cloud.user === u) setCoaching(u.uid, coaching);
   }catch(e){ COACH = {uid:u.uid, profile:null, mine:null, admin:false, loaded:false}; }
   renderModeSwitch();
   return COACH.loaded;
 }
-function clearCoach(){ COACH = {uid:"", profile:null, mine:null, admin:false, loaded:false}; renderModeSwitch(); }
+// pick up new targets or a new note when the app comes back to the front (at most once a minute)
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible" && Cloud.user && Date.now()-COACH_AT > 60000) loadCoach(); });
+function clearCoach(){ COACH = {uid:"", profile:null, mine:null, admin:false, loaded:false}; COACHING = null; try{ localStorage.removeItem(COACHING_KEY); localStorage.removeItem(OWN_KEY); }catch(e){} renderModeSwitch(); }
 const coachActive = () => !!(COACH.profile && COACH.profile.active);
 const coachOn = () => coachActive() && !!COACH.profile.code;
 function renderModeSwitch(){ const el = $("#modesw"); if(el) el.hidden = !(Cloud.user && coachOn()); }
@@ -3018,6 +3064,73 @@ function openCoach(){
   loadRoster();
   if(COACH.admin) loadKeys();
 }
+/* coach: one client's targets, pinned note and last 7 days */
+let CLIENT = null;
+async function openClient(c){
+  COACHNEXT = "client";
+  openSheet(c.name, `<div class="acct"><p class="sub">Loading ${esc(c.name)}'s account…</p></div>`);
+  try{ const data = await Cloud.coach.clientData(c.client); CLIENT = {...c, data}; renderClient(); }
+  catch(e){ openSheet(c.name, `<div class="acct"><p class="sub">Couldn't load ${esc(c.name)}'s account. ${esc(Cloud.coach.friendly(e))}</p><button class="primary" data-coach="coach" ${GHOST}>Back to your clients</button></div>`); }
+}
+// Adonis's own targets for the client, worked out from their saved answers and weigh-ins (null if they haven't set up nutrition)
+function estimateFor(main, days){
+  if(!main || !main.nutri || !N) return null;
+  const mine = S; let r = null;
+  try{ S = fromObj({...main, days: days || {}}); r = targetsOn(todayStr(), true); if(!r || !r.r) r = null; }
+  catch(e){ r = null; }
+  finally{ S = mine; }
+  return r;
+}
+const calOf = t => Math.round(num(t.protein)*4 + num(t.carbs)*4 + num(t.fat)*9);
+function clientDays(days, T){
+  let h = "";
+  for(let i=0;i<7;i++){
+    const d = addDays(todayStr(), -i), D = days[d], parts = [];
+    if(D && D.food && D.food.length){ const t = totals(D); parts.push(`${t.cal.toLocaleString()} cal`, `${Math.round(t.p)}${T?` of ${T.protein}`:""} g protein`); }
+    if(D && D.complete) parts.push("Workout done");
+    if(D && num(D.weight) > 0) parts.push(`${num(D.weight)} lb`);
+    h += `<div class="client"><div class="nm"><b>${esc(i===0 ? "Today" : parse(d).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"}))}</b><small>${esc(parts.length ? parts.join(" · ") : "Nothing logged")}</small></div></div>`;
+  }
+  return h;
+}
+function renderClient(){
+  COACHNEXT = "client";
+  const c = CLIENT, d = c.data, co = d.coaching || {}, T = co.targets || null, est = estimateFor(d.main, d.days);
+  const first = esc(String(c.name).trim().split(/\s+/)[0] || c.name);
+  const start = T || (est ? {protein:est.protein, carbs:est.carbs, fat:est.fat} : {protein:"", carbs:"", fat:""});
+  openSheet(c.name, `<div class="acct"><button class="linkbtn" data-coach="coach">‹ All clients</button>
+    <h3>Daily macro targets</h3>
+    <form class="card" data-coachf="targets" novalidate>
+      <p class="tip" style="margin-top:0">${T ? `${first} sees these as “Set by your coach.”` : `Not set. ${first} is using Adonis's own targets.`}</p>
+      <div class="qarow">
+        <label class="qm qp"><span>Protein</span><input id="ct-p" inputmode="numeric" value="${esc(start.protein)}" aria-label="Protein grams a day"><i>g</i></label>
+        <label class="qm qc"><span>Carbs</span><input id="ct-c" inputmode="numeric" value="${esc(start.carbs)}" aria-label="Carb grams a day"><i>g</i></label>
+        <label class="qm qf"><span>Fat</span><input id="ct-f" inputmode="numeric" value="${esc(start.fat)}" aria-label="Fat grams a day"><i>g</i></label>
+      </div>
+      <div class="kcal" aria-live="polite"><b id="ct-cal">${calOf(start).toLocaleString()}</b>calories a day, from the macros</div>
+      <p class="tip">${est ? `Adonis's estimate for ${first} today: ${est.cal.toLocaleString()} cal · ${est.protein} g protein · ${est.carbs} g carbs · ${est.fat} g fat.` : `${first} hasn't set up nutrition in Adonis, so there's no estimate to compare.`}</p>
+      <label class="chk"><input type="checkbox" id="ct-edit" ${co.letEdit ? "checked" : ""}><span>Let ${first} switch back to their own targets</span></label>
+      <div class="err" role="alert"></div>
+      <button class="primary" type="submit">${T ? "Save targets" : "Set targets"}</button>
+    </form>
+    ${T ? `<button class="primary" data-coach="cleartargets" ${GHOST}>Stop setting ${first}'s targets</button>` : ""}
+    <h3>Note to ${first}</h3>
+    <form class="card" data-coachf="note" novalidate>
+      <div class="field"><label for="ct-note">Pinned to the top of ${first}'s Today tab</label><textarea id="ct-note" rows="3" maxlength="500">${esc(co.note ? co.note.text : "")}</textarea></div>
+      <div class="err" role="alert"></div>
+      <button class="primary" type="submit">${co.note ? "Update note" : "Pin note"}</button>
+    </form>
+    ${co.note ? `<button class="primary" data-coach="clearnote" ${GHOST}>Clear note</button>` : ""}
+    <h3>Last 7 days</h3><div class="card">${clientDays(d.days, T)}</div></div>`);
+}
+document.addEventListener("input", e=>{
+  if(!e.target.matches("#ct-p,#ct-c,#ct-f")) return;
+  const el = $("#ct-cal"); if(el) el.textContent = calOf({protein:$("#ct-p").value, carbs:$("#ct-c").value, fat:$("#ct-f").value}).toLocaleString();
+});
+async function saveClient(patch, msg){
+  const next = await Cloud.coach.setCoaching(CLIENT.client, patch);
+  CLIENT.data.coaching = next; renderClient(); showToast(msg, true);
+}
 /* admin only: one-time activation codes that unlock coach mode for someone */
 function keysHTML(){
   return `<div class="acct"><h3>Coach activation codes</h3><p class="tip" style="margin-top:0">Only admins see this. Each code turns on coach mode for one person, once.</p>
@@ -3048,7 +3161,7 @@ async function loadRoster(){
     box().innerHTML = list.map(c=>{
       const quiet = c.ok && (!c.lastLog || Date.now() - c.lastLog > 3*864e5);
       const line = !c.ok ? "Couldn't load their logs" : c.lastLog ? `Last log ${ago(c.lastLog)} · ${c.days7} of the last 7 days logged` : "Nothing logged in the last 2 weeks";
-      return `<div class="client"><span class="avatar" aria-hidden="true">${firstLetter(c.name)}</span><div class="nm"><b>${esc(c.name)}</b><small>${esc(line)}</small>${quiet ? `<span class="flag">Needs a check-in</span>` : ""}</div>
+      return `<div class="client"><button class="nmbtn" data-coach="client" data-id="${esc(c.id)}" data-client="${esc(c.client)}" data-name="${esc(c.name)}"><span class="avatar" aria-hidden="true">${firstLetter(c.name)}</span><span class="nm"><b>${esc(c.name)}</b><small>${esc(line)}</small>${quiet ? `<span class="flag">Needs a check-in</span>` : ""}</span><span class="chev" aria-hidden="true">›</span></button>
         <button class="rm" data-coach="remove" data-id="${esc(c.id)}" data-name="${esc(c.name)}" aria-label="Remove ${esc(c.name)}">Remove</button></div>`;
     }).join("");
   }catch(e){ if(box()) box().innerHTML = `<p class="empty">Couldn't load your clients. ${esc(Cloud.coach.friendly(e))}</p>`; }
@@ -3065,7 +3178,11 @@ document.addEventListener("click", async e=>{
     if(g==="mine"){ withCoach(openMyCoach); return; }
     if(g==="coach"){ withCoach(openCoach); return; }
     if(g==="retry"){ withCoach(COACHNEXT==="mine" ? openMyCoach : openCoach); return; }
-    if(g==="back"){ (COACHNEXT==="mine" ? openMyCoach : openCoach)(); return; }
+    if(g==="back"){ (COACHNEXT==="mine" ? openMyCoach : COACHNEXT==="client" && CLIENT ? renderClient : openCoach)(); return; }
+    if(g==="client"){ openClient({id:t.dataset.id, client:t.dataset.client, name:t.dataset.name}); return; }
+    if(g==="cleartargets"){ busy("Clearing…"); await saveClient({targets:null, letEdit:false}, `${CLIENT.name} is back on Adonis's own targets.`); return; }
+    if(g==="clearnote"){ busy("Clearing…"); await saveClient({note:null}, "Note cleared."); return; }
+    if(g==="own-on" || g==="own-off"){ try{ localStorage.setItem(OWN_KEY, g==="own-on" ? "1" : "0"); }catch(x){} render(); showToast(g==="own-on" ? "Using your own targets." : "Using your coach's targets."); return; }
     if(g==="start"){ busy("Turning on…"); COACH.profile = await C.activate(""); renderModeSwitch(); openCoach(); showToast("Coach mode is on. Share your invite code with clients.", true); return; }
     if(g==="request"){ openSheet("Send feedback", feedbackHTML()); setTimeout(()=>{ const x = $("#fbtext"); if(x){ x.value = "I'd like coach access for Adonis.\nName:\nWhere I coach:\nAbout how many clients:"; x.focus(); } }, 50); return; }
     if(g==="copykey"){ try{ await navigator.clipboard.writeText(prettyKey(t.dataset.key)); showToast("Activation code copied."); }catch(x){ showToast("Couldn't copy. Press and hold the code to copy it."); } return; }
@@ -3089,10 +3206,22 @@ document.addEventListener("submit", async e=>{
   const kind = f.dataset.coachf, C = Cloud.coach;
   const err = f.querySelector(".err"), btn = f.querySelector("button[type=submit]"), label = btn.textContent;
   err.textContent = ""; btn.disabled = true;
-  btn.textContent = kind==="link" ? "Linking…" : kind==="activate" ? "Activating…" : "Making a code…";
+  btn.textContent = kind==="link" ? "Linking…" : kind==="activate" ? "Activating…" : kind==="makekey" ? "Making a code…" : "Saving…";
   try{
     if(kind==="link"){ const m = await C.link($("#co-code").value); COACH.mine = {...m, linked: Date.now()}; openMyCoach(); showToast(`You're linked to ${m.name}.`, true); }
     if(kind==="activate"){ COACH.profile = await C.activate($("#co-key").value); renderModeSwitch(); openCoach(); showToast("Coach mode is on. Share your invite code with clients.", true); }
+    if(kind==="targets"){
+      const v = id => { const x = String($(id).value).trim(); return /^\d{1,4}$/.test(x) ? +x : NaN; };
+      const t = {protein:v("#ct-p"), carbs:v("#ct-c"), fat:v("#ct-f")};
+      if(!(t.protein>=30 && t.protein<=400 && t.carbs>=0 && t.carbs<=800 && t.fat>=15 && t.fat<=300)) throw {coachMsg:"Check the numbers: protein 30–400 g, carbs 0–800 g, fat 15–300 g, whole numbers."};
+      t.cal = calOf(t);
+      await saveClient({targets:t, letEdit:$("#ct-edit").checked}, `Targets saved. ${CLIENT.name} sees them next time they open Adonis.`);
+    }
+    if(kind==="note"){
+      const text = $("#ct-note").value.trim();
+      if(!text) throw {coachMsg:"Write a note first, or use Clear note."};
+      await saveClient({note:{text, t:Date.now()}}, `Note pinned for ${CLIENT.name}.`);
+    }
     if(kind==="makekey"){
       const key = await C.makeKey($("#key-note").value);
       try{ await navigator.clipboard.writeText(prettyKey(key)); }catch(x){}
