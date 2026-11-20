@@ -196,7 +196,9 @@
     admin: () => FB.doc(db, "admins", user.uid),
     keys: () => FB.collection(db, "coachKeys"),
     key: k => FB.doc(db, "coachKeys", k),
+    coaching: uid => FB.doc(db, "users", uid, "coach", "main"),   // what a coach has set for a client
   };
+  const clientOf = linkId => String(linkId).split("_")[1];
   async function linksWhere(field) {
     const snap = await FB.getDocs(FB.query(CR.links(), FB.where(field, "==", user.uid)));
     const out = []; snap.forEach(s => out.push({ id: s.id, ...s.data() }));
@@ -272,6 +274,7 @@
     // so turning it back on needs no new activation code
     async stop() {
       const p = await Coach.profile(), mine = await linksWhere("coach");
+      await deleteAll(mine.map(l => CR.coaching(l.client)));     // targets and notes go first, while still linked
       const refs = mine.map(l => CR.link(l.id));
       if (p && p.code) refs.push(CR.invite(p.code));
       await deleteAll(refs);
@@ -331,8 +334,35 @@
       await b.commit();
       return { id, coach: c.coach, name: c.name || "Your coach" };
     },
-    // either side can end a link; the coach loses access right away
-    async unlink(id) { await deleteAll([CR.link(id)]); },
+    // either side can end a link; the coach loses access right away and their targets and note are cleared
+    async unlink(id) { await deleteAll([CR.coaching(clientOf(id)), CR.link(id)]); },
+    // coach: one client's account, read-only: saved state, recent days, and what the coach has set
+    async clientData(client) {
+      const since = FB.Timestamp.fromMillis(Date.now() - 45 * 864e5);
+      const [m, snap, c] = await Promise.all([
+        FB.getDoc(FB.doc(db, "users", client, "state", "main")),
+        FB.getDocs(FB.query(FB.collection(db, "users", client, "days"), FB.where("t", ">", since))),
+        FB.getDoc(CR.coaching(client)),
+      ]);
+      let main = null; try { main = m.exists() ? JSON.parse(m.data().j) : null; } catch (e) {}
+      const days = {}; snap.forEach(s => { try { days[s.id] = JSON.parse(s.data().j); } catch (e) {} });
+      return { main, days, coaching: c.exists() ? c.data() : null };
+    },
+    // coach: set a client's targets {protein, carbs, fat, cal} | null, letEdit, and pinned note {text, t} | null
+    async setCoaching(client, patch) {
+      const cur = await FB.getDoc(CR.coaching(client)), prev = cur.exists() ? cur.data() : {};
+      const next = { targets: null, letEdit: false, note: null, ...prev, ...patch, coach: user.uid, coachName: user.displayName || "Your coach", updated: FB.serverTimestamp() };
+      await FB.setDoc(CR.coaching(client), next);
+      return next;
+    },
+    // client: what my coach has set for me, only from the coach I'm linked to now
+    async myCoaching(link) {
+      if (!link) return null;
+      const s = await FB.getDoc(CR.coaching(user.uid));
+      if (!s.exists()) return null;
+      const d = s.data();
+      return d.coach === link.coach ? { targets: d.targets || null, letEdit: !!d.letEdit, note: d.note || null, coachName: d.coachName || link.name, updated: tms(d.updated) } : null;
+    },
     friendly(e) { return (e && e.coachMsg) || friendly(e); },
   };
 
@@ -425,8 +455,9 @@
       refs.push(R.main(), R.profile());
       // coaching: unlink from a coach and from any clients, retire the invite code, clear coach-set data
       try {
-        const links = [...await linksWhere("client"), ...await linksWhere("coach")];
-        links.forEach(l => refs.push(CR.link(l.id)));
+        const asClient = await linksWhere("client"), asCoach = await linksWhere("coach");
+        asCoach.forEach(l => refs.push(CR.coaching(l.client)));   // before the links, so the rules still allow it
+        [...asClient, ...asCoach].forEach(l => refs.push(CR.link(l.id)));
         const cs = await FB.getDocs(FB.collection(db, "users", user.uid, "coach"));
         cs.forEach(s => refs.push(FB.doc(db, "users", user.uid, "coach", s.id)));
         const p = await Coach.profile();
