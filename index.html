@@ -528,6 +528,8 @@ body.resting .wrap{padding-bottom:200px}
 .cal-d i .b{background:var(--carbs)}
 .cal-d.w i b{box-shadow:0 0 0 1.5px #fff}
 .ch{font:700 19px/1.1 var(--display);margin:0 0 8px}
+.bfout{margin:12px 0 0}
+.bfnum{font:700 26px/1 var(--display)}
 .log{list-style:none;margin:0;padding:0}
 .log li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
 .log li:first-child{border-top:0}
@@ -1168,6 +1170,100 @@ function renderBody(){
   return nav + (bsub==="history" ? historyView() : bsub==="progress" ? progressView() : bsub==="records" ? recordsView() : todayView());
 }
 
+/* ----- body fat: measured once a week, the app works out the percentage ----- */
+// tape = U.S. Navy circumference method (default), calipers = Jackson-Pollock 3-site skinfolds,
+// known = typed in from a scan or smart scale. The result is stored on the day as D.bf so charts and nutrition just read it.
+const BF_METHODS = [["tape","Tape"],["calipers","Calipers"],["known","I know it"]];
+const BF_NOTE = {
+  tape: "Worked out with the U.S. Navy tape method. It's usually within 3 to 4% of a lab scan, so watch the trend more than any one number.",
+  calipers: "Worked out from 3 skinfolds (Jackson-Pollock). Closer than tape for lifters once you're consistent. Pinch each spot 2 or 3 times and use the average.",
+  known: "From a body scan, InBody or smart scale. Use the same device, at the same time of day, every time."
+};
+let bfOpen = false;
+function bfMethod(){ return BF_METHODS.some(m=>m[0]===S.settings.bfMethod) ? S.settings.bfMethod : "tape"; }
+function bfSex(){ const s = S.profile.sex; return s==="female" || s==="male" ? s : ""; }
+// newest logged value of a day field on or before d. Neck and hips change slowly, so the last one carries forward.
+function lastField(f, d){
+  const ks = Object.keys(S.days).filter(k=>k<=d).sort();
+  for(let i=ks.length-1;i>=0;i--){ const v = num(S.days[ks[i]][f]); if(v>0) return {v, d:ks[i]}; }
+  const a = S.nutri && S.nutri.a; return a && num(a[f])>0 ? {v:num(a[f]), d:""} : null;
+}
+function bfSetupMissing(how){
+  const m = [];
+  if(how==="known") return m;
+  if(!bfSex()) m.push("sex");
+  if(how==="tape" && !(num(S.profile.heightIn)>0)) m.push("height");
+  if(how==="calipers" && !(num(S.profile.age)>0)) m.push("age");
+  return m;
+}
+function bfFromDay(D, d){
+  const how = D.bfHow, sex = bfSex();
+  if(!sex) return null;
+  if(how==="tape"){
+    const w = num(D.waist); if(!w) return null;
+    const nk = num(D.neck) || (lastField("neck", d)||{}).v, hp = sex==="female" ? (num(D.hips) || (lastField("hips", d)||{}).v) : 0;
+    const v = N.navyBF(sex, num(S.profile.heightIn), w, nk, hp);
+    return v==null ? null : Math.round(v*10)/10;
+  }
+  if(how==="calipers"){ const v = N.caliperBF(sex, num(S.profile.age), D.sf||{}); return v==null ? null : Math.round(v*10)/10; }
+  return null;
+}
+function recalcBf(D, d){
+  const how = bfMethod(); if(how==="known") return;   // typed in by hand, nothing to work out
+  D.bfHow = how; const v = bfFromDay(D, d); D.bf = v==null ? "" : String(v);
+}
+function bfResult(D){
+  const how = D.bfHow || bfMethod();
+  if(num(D.bf)>0) return `<b class="bfnum">${esc(D.bf)}%</b> body fat<span class="tip" style="display:block">${esc(BF_NOTE[how]||BF_NOTE.known)}</span>`;
+  if(how==="known") return "";
+  const sex = bfSex();
+  if(how==="tape"){
+    const need = [!num(D.waist)&&"waist", !(num(D.neck)||lastField("neck",cur))&&"neck", sex==="female"&&!(num(D.hips)||lastField("hips",cur))&&"hips"].filter(Boolean);
+    return `<span class="tip">${need.length ? `Enter your ${need.join(" and ")} and Adonis works out your body fat.` : "Those numbers don't add up. Double-check your waist and neck."}</span>`;
+  }
+  return `<span class="tip">Enter all three skinfolds in millimeters and Adonis works out your body fat.</span>`;
+}
+function bodyFatCard(D){
+  const how = bfMethod(), sex = bfSex(), t = todayStr();
+  const before = Object.keys(S.days).filter(k=>k<cur && num(S.days[k].bf)>0).sort(), last = before[before.length-1];
+  const started = num(D.bf)>0 || num(D.waist)>0 || num(D.neck)>0 || Object.values(D.sf||{}).some(v=>num(v)>0);
+  const due = !last || diff(cur, last) >= 7;
+  const head = `<h3 class="ch">Body fat <small class="tip" style="font:inherit;font-size:13px;font-weight:400">· once a week</small></h3>`;
+  if(!started && !due && !bfOpen)
+    return `<div class="card">${head}<p class="tip" style="margin-top:0">Last measured ${esc(sd(last))}. Your next one is due around ${esc(sd(addDays(last,7)))}.</p><button class="linkbtn" data-bfopen="1">Measure now</button></div>`;
+  const chips = `<div class="chips" role="group" aria-label="How you measure body fat" style="margin-bottom:10px">${BF_METHODS.map(([k,l])=>`<button class="chip" data-bfm="${k}" aria-pressed="${how===k}">${l}</button>`).join("")}</div>`;
+  const miss = bfSetupMissing(how);
+  if(miss.length){
+    return `<div class="card">${head}${chips}<p class="tip" style="margin-top:0">The formula needs a little about you first. You only do this once.</p><div class="row">
+      ${miss.includes("sex")?`<div class="field" style="grid-column:span 2"><label for="bsex">Sex</label><select id="bsex"><option value="">Choose</option><option value="male">Male</option><option value="female">Female</option></select></div>`:""}
+      ${miss.includes("height")?`<div class="field"><label for="bhft">Height ft</label><input id="bhft" inputmode="numeric"></div><div class="field"><label for="bhin">in</label><input id="bhin" inputmode="numeric"></div>`:""}
+      ${miss.includes("age")?`<div class="field" style="grid-column:span 2"><label for="bage">Age</label><input id="bage" inputmode="numeric"></div>`:""}
+    </div><button class="primary" data-bfsetup="1" style="margin-top:10px">Continue</button></div>`;
+  }
+  const fld = (id, label, val, tip, ph) => `<div class="field wide"><label for="${id}">${label}</label><input id="${id}" inputmode="decimal" value="${esc(val||"")}"${ph?` placeholder="${esc(ph)}"`:""}>${tip?`<p class="tip">${esc(tip)}</p>`:""}</div>`;
+  let body = "";
+  if(how==="tape"){
+    const lastNeck = !num(D.neck) && lastField("neck", addDays(cur,-1)), lastHips = sex==="female" && !num(D.hips) && lastField("hips", addDays(cur,-1));
+    body = fld("bwaist", "Waist (inches)", D.waist, sex==="female" ? "At the narrowest point, relaxed, after breathing out" : "Level with your belly button, relaxed, after breathing out")
+      + fld("bneck", "Neck (inches)", D.neck, `Just below the Adam's apple, tape sloping slightly down to the front.${lastNeck?` Leave blank to reuse your last one (${lastNeck.v} in).`:""}`, lastNeck ? `${lastNeck.v}` : "")
+      + (sex==="female" ? fld("bhips", "Hips (inches)", D.hips, `At the widest point of your hips and glutes.${lastHips?` Leave blank to reuse your last one (${lastHips.v} in).`:""}`, lastHips ? `${lastHips.v}` : "") : "");
+  } else if(how==="calipers"){
+    body = N.CALIPER_SITES[sex].map(([k,l,tip])=>`<div class="field wide"><label for="sf-${k}">${esc(l)} (mm)</label><input id="sf-${k}" data-sf="${k}" inputmode="decimal" value="${esc((D.sf||{})[k]||"")}"><p class="tip">${esc(tip)}</p></div>`).join("")
+      + fld("bwaist", "Waist, inches (optional)", D.waist, "Worth tracking too. Same spot each time.");
+  } else {
+    body = fld("bbf", "Body fat %", D.bf, "") + fld("bwaist", "Waist, inches (optional)", D.waist, "Same spot each time.");
+  }
+  const tip = how==="tape" ? `<p class="tip">Building muscle? A bigger neck lowers the estimate a little, so it does pick up muscle gain. Your lean mass in <button class="inlink" data-bsub="progress">Progress</button> tells the full story. For a closer number, switch to calipers.</p>`
+    : how==="calipers" ? `<p class="tip">Use the right side of your body, before a workout. A basic set of calipers costs about $10.</p>` : "";
+  return `<div class="card">${head}${chips}<div class="row">${body}</div>
+    <p id="bfout" class="bfout" aria-live="polite">${bfResult(D)}</p>${tip}</div>`;
+}
+function updateBfOut(){
+  const D = day(cur), o = $("#bfout"); if(o) o.innerHTML = bfResult(D);
+  const bfs = Object.keys(S.days).sort().filter(k=>num(S.days[k].bf)>0), l = $("#bflast");
+  if(l) l.textContent = bfs.length ? num(S.days[bfs[bfs.length-1]].bf)+"%" : "—";
+}
+
 /* ----- today: this week + check-in ----- */
 function todayView(){
   const D = day(cur), ws = weights(), a = avg7(ws, todayStr()), first = ws[0];
@@ -1189,14 +1285,13 @@ function todayView(){
     <p class="tip statnote">A day counts toward your protein goal when you log food and reach at least 90% of your protein target${targetsOn(todayStr()).protein?` (${targetsOn(todayStr()).protein} g today)`:""}.</p>
     <h2>Check-in</h2><p class="sub">Weigh in most mornings, same conditions. The weekly average is what matters.</p>
     <div class="card"><div class="row">
-      <div class="field" style="grid-column:span 2"><label for="bw">Weight (lb)</label><input id="bw" inputmode="decimal" value="${esc(D.weight)}"></div>
-      <div class="field" style="grid-column:span 2"><label for="bbf">Body fat % (optional)</label><input id="bbf" inputmode="decimal" value="${esc(D.bf)}"></div>
-      <div class="field" style="grid-column:span 2"><label for="bwaist">Waist, inches (optional)</label><input id="bwaist" inputmode="decimal" value="${esc(D.waist||"")}"></div>
-    </div><p class="tip">Measure your waist about once a week, at the same spot each time.</p></div>
+      <div class="field wide"><label for="bw">Weight (lb)</label><input id="bw" inputmode="decimal" value="${esc(D.weight)}"></div>
+    </div></div>
+    ${bodyFatCard(D)}
     <div class="stats">
       <div class="stat"><b>${a!=null?a.toFixed(1):"—"}</b><span>7-day average</span></div>
       <div class="stat"><b>${change!=null?(change>0?"+":"")+change.toFixed(1):"—"}</b><span>Since first weigh-in</span></div>
-      <div class="stat"><b>${lastBf!=null?lastBf+"%":"—"}</b><span>Latest body fat</span></div>
+      <div class="stat"><b id="bflast">${lastBf!=null?lastBf+"%":"—"}</b><span>Latest body fat</span></div>
     </div>
     <p class="sub">${S.nutri?"Your weigh-ins, body fat and waist feed straight into your Eat tab targets. ":""}See your trends and goals in <button class="inlink" data-bsub="progress">Progress</button>.</p>`;
 }
@@ -1289,7 +1384,8 @@ function dayDetail(d){
   if(D.food && D.food.length){ const T = totals(D), tg = targetsOn(d);
     food = `<div class="stats" style="margin:0"><div class="stat"><b>${T.cal}</b><span>of ${esc(tg.cal)} cal</span></div><div class="stat"><b>${Math.round(T.p)}g</b><span>of ${esc(tg.protein)}g protein</span></div><div class="stat"><b>${D.food.length}</b><span>item${D.food.length===1?"":"s"} logged</span></div></div>`;
   } else food = `<p class="empty">No food logged.</p>`;
-  const body = [num(D.weight)?`${D.weight} lb`:"", num(D.bf)?`${D.bf}% body fat`:"", num(D.waist)?`${D.waist} in waist`:""].filter(Boolean).join(" · ");
+  const how = {tape:" (tape)", calipers:" (calipers)"}[D.bfHow] || "";
+  const body = [num(D.weight)?`${D.weight} lb`:"", num(D.bf)?`${D.bf}% body fat${how}`:"", num(D.waist)?`${D.waist} in waist`:"", num(D.neck)?`${D.neck} in neck`:"", num(D.hips)?`${D.hips} in hips`:""].filter(Boolean).join(" · ");
   return `<h2>${esc(parse(d).toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"}))}</h2>
     <div class="card"><h3 class="ch">Workout${def && !def.rest ? `: ${esc(def.name)}` : ""}</h3>${wk}</div>
     <div class="card"><h3 class="ch">Food</h3>${food}</div>
@@ -1347,7 +1443,12 @@ function progressView(){
   let h = `<h2>Body weight</h2>
     ${trendChart(weights().map(x=>({d:x.d, v:x.w})), {avg:true, unit:" lb", goal: !preg && num(s.goalWeight) ? {v:num(s.goalWeight), d:s.goalDate||""} : null, aria:"Weight trend", empty:"Log your weight on a few mornings to see your trend here."})}
     <p class="sub">${esc(paceText())}</p>`;
-  if(bf.length) h += `<h2>Body fat</h2>${trendChart(bf, {unit:"%", minPad:.5, label:"Body fat %", color:"var(--fat)", goal: !preg && num(s.goalBf) ? {v:num(s.goalBf), d:s.goalDate||""} : null, aria:"Body fat trend", empty:"Log body fat a couple of times to see a trend."})}`;
+  if(bf.length){
+    h += `<h2>Body fat</h2>${trendChart(bf, {unit:"%", minPad:.5, label:"Body fat %", color:"var(--fat)", goal: !preg && num(s.goalBf) ? {v:num(s.goalBf), d:s.goalDate||""} : null, aria:"Body fat trend", empty:"Measure once a week to see a trend."})}`;
+    const hows = new Set(bf.map(p=>S.days[p.d].bfHow||"known"));
+    h += `<p class="tip statnote">${hows.size>1 ? "You've used more than one way to measure. Each reads a little differently, so compare like with like." : esc(BF_NOTE[[...hows][0]]||"")}</p>`;
+    if(!preg) h += leanMassSection(bf);
+  }
   if(waist.length) h += `<h2>Waist</h2>${trendChart(waist, {unit:" in", minPad:.3, label:"Waist (in)", color:"var(--protein)", aria:"Waist trend", empty:"Measure your waist once a week to see a trend here."})}`;
   // strength
   const names = liftNames().filter(n=>dailyBest(n, x=>CO.e1rm(num(x.w),num(x.r))).length);
@@ -1379,6 +1480,19 @@ function progressView(){
       ${[["cal","Calories"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"]].map(([k,l])=>`<div class="field"><label for="t-${k}">${l}</label><input id="t-${k}" data-set="${k}" inputmode="numeric" value="${esc(s[k])}"></div>`).join("")}
     </div><p class="tip">Set up nutrition on the Eat tab and these are calculated for you.</p></div>`}`;
   return h;
+}
+// lean mass vs fat mass: body fat % times the weight around that day. Shows whether weight change is muscle or fat.
+function leanMassSection(bf){
+  const ws = weights();
+  const pts = bf.map(p=>{ const w = avg7(ws, p.d) ?? (ws.filter(x=>Math.abs(diff(x.d,p.d))<=3).sort((a,b)=>Math.abs(diff(a.d,p.d))-Math.abs(diff(b.d,p.d)))[0]||{}).w;
+    return w ? {d:p.d, lean:w*(1-p.v/100), fat:w*p.v/100} : null; }).filter(Boolean);
+  if(!pts.length) return "";
+  const a = pts[0], z = pts[pts.length-1], sg = v => (v>0?"+":"")+r1(v);
+  let h = `<h2>Lean mass</h2>${trendChart(pts.map(p=>({d:p.d, v:Math.round(p.lean*10)/10})), {unit:" lb", minPad:1, label:"Lean mass (lb)", color:"var(--protein)", aria:"Lean mass trend", empty:"Weigh in and measure body fat for two weeks to see your lean mass trend."})}
+    <div class="stats" style="grid-template-columns:repeat(2,1fr)">
+      <div class="stat"><b>${r1(z.lean)} lb</b><span>Lean mass${pts.length>1?` · ${sg(z.lean-a.lean)} since ${esc(sd(a.d))}`:""}</span></div>
+      <div class="stat"><b>${r1(z.fat)} lb</b><span>Fat mass${pts.length>1?` · ${sg(z.fat-a.fat)} since ${esc(sd(a.d))}`:""}</span></div></div>`;
+  return h + `<p class="tip statnote">Lean mass is everything that isn't fat: muscle, bone, water. If it holds or climbs while fat mass drops, you're building or keeping muscle, even when the scale barely moves.</p>`;
 }
 function goalCard(g){
   const metric = x => gMetric(g, x), target = g.w > 0 ? CO.e1rm(g.w, g.r) : g.r;
@@ -1562,6 +1676,15 @@ document.addEventListener("click", e=>{
     t.setAttribute("aria-pressed", i<0); saveDay(cur); return;
   }
   if(t.dataset.swap){D.swap=D.swap||{};if(t.dataset.to===t.dataset.swap)delete D.swap[t.dataset.swap];else D.swap[t.dataset.swap]=t.dataset.to;saveDay(cur);render();return}
+  if(t.dataset.bfm){ S.settings.bfMethod = t.dataset.bfm; saveSettings(); if(t.dataset.bfm!=="known" && (num(D.waist)||num(D.neck)||D.sf)) { recalcBf(D, cur); saveDay(cur); } render(); return }
+  if(t.dataset.bfopen){ bfOpen = true; render(); return }
+  if(t.dataset.bfsetup){
+    const pf = S.profile, sx = $("#bsex"), hf = $("#bhft"), hi = $("#bhin"), ag = $("#bage");
+    if(sx){ if(!sx.value) return showToast("Choose male or female. The formulas are different for each."); pf.sex = sx.value; }
+    if(hf){ const h = num(hf.value)*12 + num(hi.value); if(!(h>=48 && h<=90)) return showToast("Enter your height in feet and inches."); pf.heightIn = h; }
+    if(ag){ const v = num(ag.value); if(!(v>=14 && v<=90)) return showToast("Enter an age between 14 and 90."); pf.age = v; }
+    recalcBf(D, cur); cacheLocal(); render(); return;
+  }
   if(t.id==="build"){openBuilder();return}
   if(t.id==="export"){exportData();return}
   if(t.id==="import"){$("#importfile").click();return}
@@ -1584,13 +1707,15 @@ document.addEventListener("input", e=>{
   if(el.dataset.ex){D.lifts[el.dataset.ex][+el.dataset.i][el.dataset.k]=el.value.trim();saveDay(cur);return}
   if(["fp","fc","ff"].includes(el.id)){updateFoodCal();return}
   if(el.id==="bw"){D.weight=el.value.trim();saveDay(cur);return}
-  if(el.id==="bbf"){D.bf=el.value.trim();saveDay(cur);return}
-  if(el.id==="bwaist"){D.waist=el.value.trim();saveDay(cur);return}
+  if(el.id==="bbf"){D.bf=el.value.trim();D.bfHow="known";saveDay(cur);updateBfOut();return}
+  if(el.id==="bwaist"||el.id==="bneck"||el.id==="bhips"){D[el.id.slice(1)]=el.value.trim();recalcBf(D,cur);saveDay(cur);updateBfOut();return}
+  if(el.dataset.sf){D.sf={...(D.sf||{}),[el.dataset.sf]:el.value.trim()};recalcBf(D,cur);saveDay(cur);updateBfOut();return}
   if(el.dataset.set){S.settings[el.dataset.set]=num(el.value);saveSettings();return}
   if(el.id==="g-date"){S.settings.goalDate=el.value;saveSettings();return}
   if(el.id==="t-start" && el.value){S.settings.start=el.value;saveSettings();renderHeader();return}
 });
-document.addEventListener("change", e=>{ if(e.target.id==="importfile"){const f=e.target.files[0];e.target.value="";if(f)importData(f);return} const bk = {bw:"weight", bbf:"bf", bwaist:"waist"}[e.target.id]; if(bk){ try{ checkBodyWins(cur, bk); }catch(err){} saveDay(cur); if(bk!=="waist") render(); } });
+document.addEventListener("change", e=>{ if(e.target.id==="importfile"){const f=e.target.files[0];e.target.value="";if(f)importData(f);return} const id = e.target.id, bk = {bw:"weight", bbf:"bf", bwaist:"waist", bneck:"bf", bhips:"bf"}[id] || (e.target.dataset.sf ? "bf" : "");
+  if(bk){ try{ checkBodyWins(cur, bk); if(id==="bwaist") checkBodyWins(cur, "bf"); }catch(err){} saveDay(cur); if(bk==="weight") render(); } });
 
 /* ---------- question flows (training plan, nutrition, cut) ---------- */
 const TQ = [
@@ -2510,7 +2635,9 @@ function checkBodyWins(d, what){
   }
   if(what === "bf" || what === "waist"){
     const k = what === "bf" ? "bf" : "waist", v = num(D[k]); if(!(v > 0)) return;
-    const prev = Object.keys(S.days).filter(x=>x < d && num(S.days[x][k]) > 0).map(x=>num(S.days[x][k]));
+    // body fat only counts as a new low against readings taken the same way (tape and calipers read differently)
+    const same = x => k !== "bf" || (S.days[x].bfHow||"known") === (D.bfHow||"known");
+    const prev = Object.keys(S.days).filter(x=>x < d && num(S.days[x][k]) > 0 && same(x)).map(x=>num(S.days[x][k]));
     if(!preg && prev.length && v < Math.min(...prev) && firstTime(d, k+"low"))
       return celebrate(what === "bf" ? `New low body fat: ${v}%.` : `New smallest waist: ${v} in.`, true);
     showToast(what === "bf" ? `Body fat saved: ${v}%.` : `Waist saved: ${v} in.`, true);
@@ -2519,7 +2646,7 @@ function checkBodyWins(d, what){
 
 /* ---------- account menu: reset plans, send feedback ---------- */
 const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
-const APP_VERSION = "2026.11.19.3";   // bump with the cache VERSION in sw.js on every release
+const APP_VERSION = "2026.11.20.1";   // bump with the cache VERSION in sw.js on every release
 function openMenu(){
   const u = Cloud.user;
   openSheet("Your Adonis", `<div class="sheetbrand"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></div><div class="menu-list">

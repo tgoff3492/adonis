@@ -24,6 +24,28 @@ function navyBF(sex, heightIn, waist, neck, hips) {
   if (!isFinite(bf)) return null;
   return Math.max(3, Math.min(60, bf));
 }
+// Skinfold calipers: Jackson-Pollock 3-site body density, then the Siri equation. Folds in millimeters.
+// Men: chest, abdomen, thigh. Women: triceps, suprailiac, thigh. Returns % or null.
+const CALIPER_SITES = {
+  male: [["chest", "Chest", "Diagonal fold halfway between the front of your armpit and your nipple"],
+         ["abdomen", "Abdomen", "Vertical fold about 1 inch to the right of your belly button"],
+         ["thigh", "Thigh", "Vertical fold on the front of your thigh, halfway between hip crease and kneecap"]],
+  female: [["triceps", "Triceps", "Vertical fold on the back of your upper arm, halfway between shoulder and elbow"],
+           ["suprailiac", "Hip (suprailiac)", "Diagonal fold just above the front of your hip bone"],
+           ["thigh", "Thigh", "Vertical fold on the front of your thigh, halfway between hip crease and kneecap"]]
+};
+function caliperBF(sex, age, folds) {
+  const sites = CALIPER_SITES[sex === "female" ? "female" : "male"];
+  const vals = sites.map(([k]) => +(folds || {})[k]);
+  if (!(+age > 0) || vals.some(v => !(v > 0 && v < 100))) return null;
+  const s = vals.reduce((a, b) => a + b, 0);
+  const bd = sex === "female"
+    ? 1.0994921 - 0.0009929 * s + 0.0000023 * s * s - 0.0001392 * age
+    : 1.10938 - 0.0008267 * s + 0.0000016 * s * s - 0.0002574 * age;
+  const bf = 495 / bd - 450;
+  if (!isFinite(bf)) return null;
+  return Math.max(3, Math.min(60, bf));
+}
 
 /* ---------- pregnancy ---------- */
 // Weeks pregnant on a given date from the due date (40 weeks).
@@ -207,5 +229,5 @@ function trendCheck(weights, goal, pace, today, weightNow) {
   return null;
 }
 
-root.AdonisNutrition = { compute, trendCheck, navyBF, trimesterOf, gestWeeks, daysBetween };
+root.AdonisNutrition = { compute, trendCheck, navyBF, caliperBF, CALIPER_SITES,trimesterOf, gestWeeks, daysBetween };
 })(typeof window !== "undefined" ? window : globalThis);
