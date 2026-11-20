@@ -561,11 +561,12 @@ body.resting .wrap{padding-bottom:200px}
 #home .in-logo{position:absolute;left:50%;top:calc(40vh - 95px);width:240px;height:190px;margin-left:-120px;animation:in-pop .55s .1s both cubic-bezier(.2,1.4,.4,1)}
 #home .in-logo svg{position:absolute;left:0;top:0;width:240px;height:190px}
 #home .in-bar{animation:in-bar 2.6s both linear;transform-origin:50% 59%}
-#home .in-quote{position:absolute;left:0;right:0;top:100vh;height:calc(70vh - 110px);margin:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;color:#ECEEEA;font:italic 800 clamp(40px,13vw,60px)/.92 var(--display);text-transform:uppercase;letter-spacing:.01em}
+#home .in-quote{position:absolute;left:0;right:0;top:calc(170vh - 410px);height:240px;margin:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+#home .in-quote i{display:flex;flex-direction:column;align-items:center;transform:rotate(-15deg);color:#ECEEEA;font:italic 800 clamp(40px,14.5vw,62px)/.9 var(--display);text-transform:uppercase;letter-spacing:.01em}
 #home .in-quote span{display:block;animation:in-word .35s 2.4s both}
-#home .in-quote span:nth-child(2){color:#E0604F;animation-delay:2.6s}
-#home .in-quote span:nth-child(3){animation-delay:2.8s}
-#home .in-crack{position:absolute;left:0;top:100vh;width:100%;height:100vh;pointer-events:none}
+#home .in-quote span:nth-of-type(2){color:#E0604F;animation-delay:2.6s}
+#home .in-quote span:nth-of-type(3){animation-delay:2.8s}
+#home .in-crack{position:absolute;left:50%;top:calc(170vh - 590px);width:390px;height:844px;margin-left:-195px;overflow:visible;pointer-events:none}
 #home .in-crack path{stroke-dasharray:1;stroke-dashoffset:1;animation:in-crack .35s 2.13s both ease-out}
 #home .in-flash{position:absolute;left:0;top:100vh;width:100%;height:100vh;background:#fff;pointer-events:none;animation:in-flash .4s 2.13s both}
 @keyframes in-pop{0%{opacity:0;transform:scale(.6)}60%{opacity:1;transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}
@@ -580,12 +581,12 @@ body.resting .wrap{padding-bottom:200px}
 }
 @keyframes in-bar{
   0%,30%{transform:none}
-  34%{transform:translateY(-6px) rotate(-4deg)}
-  38%{transform:translateY(-2px) rotate(3deg)}
-  42%{transform:rotate(-2deg);animation-timing-function:cubic-bezier(.55,0,1,.45)}
-  82%{transform:translateY(calc(130vh - 52px)) rotate(1deg);animation-timing-function:ease-out}
-  87%{transform:translateY(calc(130vh - 65px))}
-  92%,100%{transform:translateY(calc(130vh - 52px))}
+  35%{transform:translateY(-3px) rotate(-1.5deg)}
+  39%{transform:translateY(-1px) rotate(1.5deg)}
+  42%{transform:translateY(0) rotate(0) scale(1);animation-timing-function:cubic-bezier(.55,0,1,.45)}
+  82%{transform:translateY(calc(130vh - 65px)) scale(1.4);animation-timing-function:ease-out}
+  87%{transform:translateY(calc(130vh - 78px)) scale(1.4)}
+  92%,100%{transform:translateY(calc(130vh - 65px)) scale(1.4)}
 }
 @keyframes in-crack{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
 @keyframes in-flash{0%{opacity:0}10%{opacity:.25}100%{opacity:0}}
@@ -596,10 +597,10 @@ body.resting .wrap{padding-bottom:200px}
   #home{animation:sp-out .4s 2.4s ease forwards}
   #home .in-cam{animation:none;transform:translateY(-100vh)}
   #home .in-logo{animation:none}
-  #home .in-bar{animation:none;transform:translateY(calc(130vh - 52px))}
+  #home .in-bar{animation:none;transform:translateY(calc(130vh - 65px)) scale(1.4)}
   #home .in-crack path{animation:none;stroke-dashoffset:0}
   #home .in-flash{display:none}
-  #home .in-quote span,#home .in-quote span:nth-child(n){opacity:0;animation:sp-fade .4s .2s both}
+  #home .in-quote span,#home .in-quote span:nth-of-type(n){opacity:0;animation:sp-fade .4s .2s both}
 }
 body.on-home{overflow:hidden}
 
@@ -710,8 +711,8 @@ h2{font:700 22px/1.1 var(--display)}
       <svg viewBox="150 330 724 572" aria-hidden="true"><clipPath id="in-clip"><rect x="0" y="0" width="1024" height="852"/></clipPath><path clip-path="url(#in-clip)" d="M300 912 L512 352 L724 912" fill="none" stroke="#ECEEEA" stroke-width="128" stroke-miterlimit="10"/></svg>
       <svg class="in-bar" viewBox="150 330 724 572" aria-hidden="true"><rect x="200" y="650" width="624" height="34" rx="6" fill="#ECEEEA"/><rect x="214" y="562" width="52" height="210" rx="10" fill="#C23B2E"/><rect x="166" y="597" width="40" height="140" rx="9" fill="#C23B2E"/><rect x="758" y="562" width="52" height="210" rx="10" fill="#C23B2E"/><rect x="818" y="597" width="40" height="140" rx="9" fill="#C23B2E"/></svg>
     </div>
-    <p class="in-quote" aria-hidden="true"><span>Iron</span><span>sharpening</span><span>iron</span></p>
-    <svg class="in-crack" viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="none" stroke="#DCE3EC" stroke-opacity=".8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"><path pathLength="1" d="M195 590 L150 548 L118 520 L60 470 L-5 420"/><path pathLength="1" d="M195 590 L238 552 L262 528 L310 480 L395 430"/><path pathLength="1" d="M195 590 L120 602 L60 594 L-5 612"/><path pathLength="1" d="M195 590 L275 600 L330 586 L395 602"/><path pathLength="1" d="M195 590 L170 662 L140 732 L110 850"/><path pathLength="1" d="M195 590 L225 666 L258 742 L282 850"/><path pathLength="1" d="M195 590 L95 660 L22 722 L-5 744"/><path pathLength="1" d="M195 590 L300 650 L380 712 L395 722"/><path pathLength="1" d="M60 470 Q 40 530 60 594"/><path pathLength="1" d="M310 480 Q 340 530 330 586"/><path pathLength="1" d="M140 732 Q 200 760 258 742"/><path pathLength="1" d="M95 660 L60 594"/><path pathLength="1" d="M300 650 L330 586"/><path pathLength="1" d="M118 520 L150 500 L190 506"/><path pathLength="1" d="M262 528 L232 506"/></g><path pathLength="1" d="M160 566 L198 556 L234 574 L228 616 L190 628 L156 612 Z" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/></svg>
+    <p class="in-quote" aria-hidden="true"><i><span>Iron</span><span>sharpening</span><span>iron</span></i></p>
+    <svg class="in-crack" viewBox="0 0 390 844" aria-hidden="true"><g fill="none" stroke="#DCE3EC" stroke-opacity=".8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"><path pathLength="1" d="M69 590 L44 552 L14 518 L-5 504"/><path pathLength="1" d="M69 590 L92 548 L118 502 L150 430"/><path pathLength="1" d="M69 590 L22 600 L-5 596"/><path pathLength="1" d="M69 590 L52 650 L32 720 L12 850"/><path pathLength="1" d="M69 590 L98 660 L128 760 L150 850"/><path pathLength="1" d="M69 590 L120 600 L195 588"/><path pathLength="1" d="M14 518 Q 2 560 22 600"/><path pathLength="1" d="M118 502 Q 140 552 120 600"/><path pathLength="1" d="M32 720 Q 64 742 98 660"/><path pathLength="1" d="M44 552 L70 530"/><path pathLength="1" d="M 321 590 L 346 552 L 376 518 L 395 504"/><path pathLength="1" d="M 321 590 L 298 548 L 272 502 L 240 430"/><path pathLength="1" d="M 321 590 L 368 600 L 395 596"/><path pathLength="1" d="M 321 590 L 338 650 L 358 720 L 378 850"/><path pathLength="1" d="M 321 590 L 292 660 L 262 760 L 240 850"/><path pathLength="1" d="M 321 590 L 270 600 L 195 588"/><path pathLength="1" d="M 376 518 Q 388 560 368 600"/><path pathLength="1" d="M 272 502 Q 250 552 270 600"/><path pathLength="1" d="M 358 720 Q 326 742 292 660"/><path pathLength="1" d="M 346 552 L 320 530"/></g><path pathLength="1" d="M52 572 L74 566 L90 580 L84 606 L62 610 L48 594 Z" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/><path pathLength="1" d="M 338 572 L 316 566 L 300 580 L 306 606 L 328 610 L 342 594 Z" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/></svg>
     <div class="in-flash"></div>
   </div>
 </section>
@@ -2829,7 +2830,7 @@ function checkBodyWins(d, what){
 
 /* ---------- account menu: reset plans, send feedback ---------- */
 const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
-const APP_VERSION = "2026.11.20.3";   // bump with the cache VERSION in sw.js on every release
+const APP_VERSION = "2026.11.20.4";   // bump with the cache VERSION in sw.js on every release
 function openMenu(){
   const u = Cloud.user;
   openSheet("Your Adonis", `<div class="sheetbrand"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></div><div class="menu-list">
