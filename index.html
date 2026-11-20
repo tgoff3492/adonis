@@ -1465,7 +1465,7 @@ function progressView(){
   }
   // strength goals
   const goals = S.sgoals || [];
-  h += `<h2>Strength goals</h2>${goals.length?"":`<p class="sub">Pick a lift and a number to chase, like a 225 lb bench. Adonis tracks how close you are and when you'll get there.</p>`}
+  h += `<h2>Strength goals</h2>${goals.length?"":`<p class="sub">Pick a benchmark to chase, like a 225 lb bench, 15 pull-ups or a sub-8 mile. Adonis tracks how close you are and when you'll get there.</p>`}
     ${goals.map(goalCard).join("")}
     <button class="primary" data-sg="add" style="margin-top:4px">Add a strength goal</button>`;
   // goal + program settings
@@ -1494,118 +1494,124 @@ function leanMassSection(bf){
       <div class="stat"><b>${r1(z.fat)} lb</b><span>Fat mass${pts.length>1?` · ${sg(z.fat-a.fat)} since ${esc(sd(a.d))}`:""}</span></div></div>`;
   return h + `<p class="tip statnote">Lean mass is everything that isn't fat: muscle, bone, water. If it holds or climbs while fat mass drops, you're building or keeping muscle, even when the scale barely moves.</p>`;
 }
-function goalCard(g){
-  const metric = x => gMetric(g, x), target = g.w > 0 ? CO.e1rm(g.w, g.r) : g.r;
-  const pts = dailyBest(g.n, metric), cur_ = pts.length ? pts[pts.length-1].v : 0, best = pts.length ? Math.max(...pts.map(p=>p.v)) : 0;
+/* ----- strength goals: a short list of benchmarks, not every exercise (every lift still tracks its own records) ----- */
+const SG_BENCH = [
+  {g:"Big lifts", kind:"lift", items:[["Barbell Bench Press","Bench press"],["Barbell Back Squat","Back squat"],["Barbell Deadlift","Deadlift"],["Barbell Overhead Press","Overhead press"]]},
+  {g:"Bodyweight", kind:"reps", items:[["Pull Up","Pull-ups"],["Chin Up","Chin-ups"],["Push Up","Push-ups"],["Dips","Dips"]]},
+  {g:"Running", kind:"run", items:[["run:1","1 mile"],["run:2","2 miles"],["run:3.107","5K"],["run:6.214","10K"]]},
+];
+function sgFind(id){ for(const b of SG_BENCH){ const it = b.items.find(i=>i[0]===id); if(it) return {kind:b.kind, id, label:it[1]}; } return null; }
+const sgKind = g => g.kind || (g.w > 0 ? "lift" : "reps");
+const sgLabel = g => g.label || g.n;
+// "7:45" -> 465 s, "1:02:30" -> 3750 s, "8" -> 480 s (plain number = minutes)
+function parseTime(v){
+  v = String(v||"").trim(); if(!v) return 0;
+  if(!v.includes(":")) return Math.round(num(v)*60);
+  const p = v.split(":").map(x=>num(x)); if(p.some(x=>x<0) || p.slice(1).some(x=>x>=60)) return 0;
+  return Math.round(p.reduce((a,x)=>a*60+x, 0));
+}
+function fmtTime(sec){ sec = Math.round(sec); const h = Math.floor(sec/3600), m = Math.floor(sec%3600/60), x = sec%60; return h ? `${h}:${pad(m)}:${pad(x)}` : `${m}:${pad(x)}`; }
+// one value per day: estimated max / reps (higher is better) or run time in seconds (lower is better)
+function goalPts(g){
+  const kind = sgKind(g), by = {};
+  const put = (d, v, better) => { if(v > 0 && (by[d] == null || better(v, by[d]))) by[d] = v; };
+  if(kind === "run"){
+    const lower = (a,b) => a < b;
+    // plan runs at least as long as the goal distance count, at their average pace
+    Object.keys(S.days).forEach(k=>Object.entries(S.days[k].cardio||{}).forEach(([key,c])=>{
+      const m = cardioMeta(k, key, c), dist = num(c.dist), mins = num(c.min);
+      if(m.mod === "run" && (m.unit || "mi") === "mi" && dist >= g.dist && mins > 0) put(k, Math.round(mins*60*g.dist/dist), lower);
+    }));
+    (g.tests||[]).forEach(t=>put(t.d, t.sec, lower));
+  } else {
+    const metric = x => gMetric(g, x), higher = (a,b) => a > b;
+    dailyBest(g.n, metric).forEach(p=>put(p.d, p.v, higher));
+    (g.tests||[]).forEach(t=>put(t.d, Math.round(metric(t)), higher));
+  }
+  return Object.keys(by).sort().map(d=>({d, v:by[d]}));
+}
+function goalHit(g, pts){
+  if(sgKind(g) === "run") return ((pts || goalPts(g)).find(p=>p.v <= g.sec) || {}).d || null;
+  const ok = s => (g.w > 0 ? num(s.w) >= g.w : true) && num(s.r) >= g.r;
   let hit = null;
-  Object.keys(S.days).sort().some(k=>(S.days[k].lifts?.[g.n]||[]).some(s=> (g.w>0 ? num(s.w)>=g.w : true) && num(s.r)>=g.r && (hit = k)));
-  const pct = hit ? 100 : Math.min(99, Math.round(100*best/target));
-  const what = g.w > 0 ? `${g.w} lb${g.r>1?` for ${g.r} reps`:""}` : `${g.r} reps in one set`;
+  Object.keys(S.days).sort().some(k=>(S.days[k].lifts?.[g.n]||[]).some(s=>ok(s) && (hit = k)));
+  (g.tests||[]).forEach(t=>{ if(ok(t) && (!hit || t.d < hit)) hit = t.d; });
+  return hit;
+}
+function goalTitle(g){
+  const kind = sgKind(g);
+  if(kind === "run") return `${sgLabel(g)} in ${fmtTime(g.sec)}`;
+  return `${sgLabel(g)}: ${kind === "lift" ? `${g.w} lb${g.r>1?` for ${g.r} reps`:""}` : `${g.r} reps in one set`}`;
+}
+function goalCard(g){
+  const kind = sgKind(g), run = kind === "run", pts = goalPts(g);
+  const target = run ? g.sec : kind === "lift" ? CO.e1rm(g.w, g.r) : g.r;
+  const best = pts.length ? (run ? Math.min(...pts.map(p=>p.v)) : Math.max(...pts.map(p=>p.v))) : 0;
+  const hit = goalHit(g, pts);
+  const pct = hit ? 100 : !best ? 0 : Math.min(99, Math.round(100*(run ? target/best : best/target)));
   let line;
   if(hit) line = `Done on ${sd(hit)}. Time for a new goal?`;
-  else if(!pts.length) line = "Log this lift and your progress shows up here.";
+  else if(!pts.length) line = run ? "Log a timed run and your progress shows up here." : "Log it in a workout, or log a test, and your progress shows up here.";
   else {
-    const sl = slopePerDay(pts), by = g.by ? ` your ${sd(g.by)} goal date` : "";
-    const now = g.w > 0 ? `Best so far: about ${best} lb estimated max (you need about ${Math.round(target)}).` : `Best so far: ${best} reps.`;
-    if(!sl || sl.slope <= 0) line = `${now} ${sl ? "Not trending up yet." + (cutting() ? " That's normal during a cut." : " Keep pushing.") : "Keep logging and a finish date shows up here."}`;
+    const sl = slopePerDay(pts), byTxt = g.by ? ` your ${sd(g.by)} goal date` : "";
+    const short = Math.max(1, Math.round(target - best));
+    const now = kind === "lift" ? `Your best sets put you about ${short} lb short.` : run ? `Best so far: ${fmtTime(best)}, ${fmtTime(best - g.sec)} to go.` : `Best so far: ${best} reps.`;
+    const improving = sl && (run ? sl.slope < 0 : sl.slope > 0);
+    if(!improving) line = `${now} ${sl ? "Not trending " + (run ? "faster" : "up") + " yet." + (cutting() && !run ? " That's normal during a cut." : " Keep pushing.") : "Keep logging and a finish date shows up here."}`;
     else { const days = Math.max(0, Math.round((target - sl.at)/sl.slope)), eta = addDays(todayStr(), days);
-      line = `${now} At your current pace, around ${sd(eta)}${g.by ? (eta <= g.by ? `, ahead of${by}` : `, after${by}`) : ""}.`; }
+      line = `${now} At your current pace, around ${sd(eta)}${g.by ? (eta <= g.by ? `, ahead of${byTxt}` : `, after${byTxt}`) : ""}.`; }
   }
-  return `<div class="card sgoal"><div class="rh"><b>${esc(g.n)}: ${esc(what)}</b><button class="xbtn" data-sgdel="${esc(g.id)}" aria-label="Remove goal ${esc(g.n)}">✕</button></div>
+  return `<div class="card sgoal"><div class="rh"><b>${esc(goalTitle(g))}</b><button class="xbtn" data-sgdel="${esc(g.id)}" aria-label="Remove goal ${esc(sgLabel(g))}">✕</button></div>
     <div class="gbar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%;${hit?"background:var(--protein)":""}"></i></div>
-    <p class="tip" style="margin:0">${esc(line)}${g.by && !hit ? ` Goal date: ${esc(sd(g.by))}.` : ""}</p></div>`;
+    <p class="tip" style="margin:0">${esc(line)}${g.by && !hit ? ` Goal date: ${esc(sd(g.by))}.` : ""}</p>
+    ${hit ? "" : `<button class="linkbtn" data-sgtest="${esc(g.id)}" style="margin-top:10px">Log a test</button>`}</div>`;
+}
+function goalFields(id){
+  const b = sgFind(id); if(!b) return "";
+  let h = "", hint = "";
+  if(b.kind === "lift"){
+    let top = null;   // heaviest-feeling set logged: the one with the highest estimated max
+    Object.values(S.days).forEach(D=>(D.lifts?.[id]||[]).forEach(x=>{ if(num(x.w)>0 && num(x.r)>0 && (!top || CO.e1rm(num(x.w),num(x.r)) > CO.e1rm(num(top.w),num(top.r)))) top = x; }));
+    h = `<div class="field" style="grid-column:span 2"><label for="sg-w">Weight lb</label><input id="sg-w" inputmode="decimal" placeholder="225"></div>
+      <div class="field" style="grid-column:span 2"><label for="sg-r">Reps</label><input id="sg-r" inputmode="numeric" value="1"></div>`;
+    if(top) hint = `Your best set so far: ${num(top.w)} lb × ${num(top.r)}.`;
+  } else if(b.kind === "reps"){
+    const pts = dailyBest(id, x=>num(x.w)>0 ? 0 : num(x.r));
+    h = `<div class="field wide"><label for="sg-r">Reps in one set</label><input id="sg-r" inputmode="numeric" placeholder="15"></div>`;
+    if(pts.length) hint = `Your best so far: ${Math.max(...pts.map(p=>p.v))} reps.`;
+  } else {
+    h = `<div class="field wide"><label for="sg-t">Time to beat</label><input id="sg-t" inputmode="text" placeholder="${id==="run:1"?"8:00":id==="run:2"?"17:00":id==="run:3.107"?"27:00":"58:00"}"><p class="tip">Minutes and seconds, like 7:45. Over an hour? Use 1:02:30.</p></div>`;
+  }
+  return h + (hint ? `<p class="tip" style="grid-column:1/-1;margin:0">${esc(hint)}</p>` : "");
 }
 function goalForm(){
-  const names = [...new Set(liftNames().concat(planLiftNames()))];
-  if(!names.length) return `<p class="sub">Build a workout plan or log a lift first, then come back to set a goal.</p>`;
-  return `<p class="sub">Leave weight blank for a bodyweight goal, like 15 pull-ups.</p>
+  const opts = SG_BENCH.map(b=>`<optgroup label="${esc(b.g)}">${b.items.map(([id,l])=>`<option value="${esc(id)}">${esc(l)}</option>`).join("")}</optgroup>`).join("");
+  return `<p class="sub">Pick one benchmark to chase. Every lift you log still tracks its own records automatically.</p>
     <div class="card"><div class="row">
-      <div class="field" style="grid-column:span 2"><label for="sg-n">Lift</label><select id="sg-n">${names.map(n=>`<option>${esc(n)}</option>`).join("")}</select></div>
-      <div class="field"><label for="sg-w">Weight lb</label><input id="sg-w" inputmode="decimal" placeholder="225"></div>
-      <div class="field"><label for="sg-r">Reps</label><input id="sg-r" inputmode="numeric" value="1"></div>
-      <div class="field" style="grid-column:span 2"><label for="sg-by">By (optional)</label><input id="sg-by" type="date"></div>
+      <div class="field wide"><label for="sg-n">Goal</label><select id="sg-n">${opts}</select></div>
+      <div id="sg-f" style="display:contents">${goalFields(SG_BENCH[0].items[0][0])}</div>
+      <div class="field wide"><label for="sg-by">By (optional)</label><input id="sg-by" type="date"></div>
     </div><div class="err" id="sgerr" role="alert"></div>
     <button class="primary" data-sg="save">Save goal</button></div>`;
 }
-
-/* ----- records ----- */
-function liftRecords(from){
-  const out = {};
-  Object.keys(S.days).sort().forEach(k=>{
-    if(from && k < from) return;
-    Object.entries(S.days[k].lifts||{}).forEach(([n,sets])=>sets.forEach(s=>{
-      const w = num(s.w), r = Math.floor(num(s.r)); if(r <= 0) return;
-      const R = out[n] = out[n] || {n, e:0, reps:{}, maxReps:0, dates:[]};
-      if(w > 0){
-        const e = CO.e1rm(w, r); if(e > R.e){ R.e = e; R.eSet = {w, r, d:k}; R.dates.push(k); }
-        [1,3,5,8,10].forEach(N=>{ if(r >= N && (!R.reps[N] || w > R.reps[N].w)){ R.reps[N] = {w, d:k}; R.dates.push(k); } });
-      } else if(r > R.maxReps){ R.maxReps = r; R.mrD = k; R.dates.push(k); }
-    }));
-  });
-  return Object.values(out).map(R=>({...R, d: R.dates.sort().pop()})).sort((a,b)=>b.d.localeCompare(a.d) || b.e - a.e);
-}
-function paceFmt(minPer){ const m = Math.floor(minPer), s = Math.round((minPer-m)*60); return s===60 ? `${m+1}:00` : `${m}:${pad(s)}`; }
-const PACE = {mi:{div:1, lbl:"per mile"}, m:{div:500, lbl:"per 500 m"}, yd:{div:100, lbl:"per 100 yd"}};
-function cardioRecords(from){
-  const mods = {}, circ = {};
-  Object.keys(S.days).sort().forEach(k=>{
-    if(from && k < from) return;
-    Object.entries(S.days[k].cardio||{}).forEach(([key,c])=>{
-      if(!c.done) return;
-      const m = cardioMeta(k, key, c);
-      if(m.type==="circuit"){
-        const sc = num(c.score); if(!sc || !m.fmt || !(m.score==="time" || m.score==="rounds")) return;
-        const cur_ = circ[m.fmt]; if(!cur_ || (m.score==="time" ? sc < cur_.v : sc > cur_.v)) circ[m.fmt] = {v:sc, d:k, st:m.score};
-        return;
-      }
-      const id = m.mod || m.name, R = mods[id] = mods[id] || {label: MOD_LABEL[m.mod] || m.name, unit:m.unit};
-      const min = num(c.min), dist = num(c.dist);
-      if(min > 0 && (!R.long || min > R.long.v)) R.long = {v:min, d:k};
-      if(dist > 0 && (!R.far || dist > R.far.v)) R.far = {v:dist, d:k};
-      if(min > 0 && dist > 0 && PACE[m.unit]){ const p = min / (dist / PACE[m.unit].div); if(!R.fast || p < R.fast.v) R.fast = {v:p, d:k}; }
-    });
-  });
-  return {mods: Object.values(mods), circ: Object.entries(circ).map(([f,v])=>({f, ...v}))};
-}
-function recordsView(){
-  const t = todayStr(), preg = isPregnant(), pf = S.profile || {};
-  const babyOk = pf.babyFrom && diff(t, pf.babyFrom) < 730;
-  if(!babyOk) recScope = "all"; else if(!recScope) recScope = "baby";
-  const from = recScope==="baby" ? pf.babyFrom : "";
-  let h = "";
-  if(preg) h += `<div class="msg"><p>New-record alerts are paused while you're pregnant. Lifting strong and steady is the goal right now, not new highs. Your past records are saved below.</p></div>`;
-  if(babyOk) h += `<div class="chips" style="margin:14px 0 4px"><button class="chip" data-recscope="baby" aria-pressed="${recScope==="baby"}">Since baby</button><button class="chip" data-recscope="all" aria-pressed="${recScope==="all"}">All time</button></div>
-    ${recScope==="baby"?`<p class="tip">Records since ${esc(sd(pf.babyFrom))}. Your body has done something huge. These are your new starting points.</p>`:""}`;
-  const lifts = liftRecords(from), cr = cardioRecords(from);
-  if(!preg && recScope!=="baby"){
-    const recent = prsBetween(addDays(t,-30), t);
-    if(recent.length) h += `<h2>New in the last 30 days</h2><div class="card"><ul class="prs">${recent.slice(0,5).map(x=>`<li><span>${esc(x.name)}</span><span>${esc(x.w)} lb × ${esc(x.r)}</span><span class="d">${esc(sd(x.d))}</span></li>`).join("")}</ul>${recent.length>5?`<p class="tip" style="margin:6px 0 0">Plus ${recent.length-5} more this month.</p>`:""}</div>`;
-  }
-  if(!lifts.length && !cr.mods.length && !cr.circ.length)
-    return h + `<div class="card" style="margin-top:14px"><p class="empty">${recScope==="baby"?"No records since baby yet. Your first workouts set the bar.":"Your records fill in automatically as you log workouts on the Train tab."}</p></div>`;
-  if(lifts.length){
-    h += `<h2>Lifts</h2><p class="sub">Estimated max for each lift. Tap one to see your rep records: the heaviest weight you've lifted for at least that many reps.</p>`;
-    h += `<div class="card reclist">` + lifts.map(R=> R.e > 0 ? `<details class="rec"><summary><span class="rn">${esc(R.n)}</span><span class="rv">${Math.round(R.e)} lb</span></summary>
-        <div class="rbig">Est. max from ${esc(R.eSet.w)} × ${esc(R.eSet.r)} on ${esc(sd(R.eSet.d))}</div>
-        <div class="rreps">${[1,3,5,8,10].map(N=>`<span><small>${N} rep${N>1?"s":""}</small><b>${R.reps[N]?esc(R.reps[N].w):"—"}</b></span>`).join("")}</div>
-        ${R.maxReps?`<p class="tip" style="margin:8px 0 0">Bodyweight: ${R.maxReps} reps in one set</p>`:""}</details>`
-      : `<details class="rec"><summary><span class="rn">${esc(R.n)}</span><span class="rv">${R.maxReps} reps</span></summary><div class="rbig">Most reps in one set, on ${esc(sd(R.mrD))}</div></details>`).join("") + `</div>`;
-  }
-  if(cr.mods.length){
-    h += `<h2>Cardio</h2>` + cr.mods.map(R=>`<div class="card rec"><div class="rh"><b>${esc(R.label)}</b></div><ul class="log">
-      ${R.far?`<li><span>Longest distance</span><span>${esc(r1(R.far.v))} ${esc(UNIT_NAME[R.unit]||"")} · ${esc(sd(R.far.d))}</span></li>`:""}
-      ${R.long?`<li><span>Longest session</span><span>${esc(r1(R.long.v))} min · ${esc(sd(R.long.d))}</span></li>`:""}
-      ${R.fast?`<li><span>Fastest pace</span><span>${esc(paceFmt(R.fast.v))} ${esc(PACE[R.unit].lbl)} · ${esc(sd(R.fast.d))}</span></li>`:""}</ul></div>`).join("");
-  }
-  if(cr.circ.length){
-    h += `<h2>Conditioning</h2><div class="card"><ul class="log">${cr.circ.map(c=>`<li><span>${esc(c.f)}</span><span>${c.st==="time"?`${esc(c.v)} min`:`${esc(c.v)} rounds`} · ${esc(sd(c.d))}</span></li>`).join("")}</ul></div>`;
-  }
-  return h;
+// a test: a one-off attempt logged straight on the goal (a run time trial, a max set of push-ups, a heavy single)
+function testForm(g){
+  const kind = sgKind(g), list = (g.tests||[]).slice().sort((a,b)=>a.d<b.d?1:-1).slice(0,8);
+  const f = kind === "run"
+    ? `<div class="field wide"><label for="sgt-t">Your time</label><input id="sgt-t" inputmode="text" placeholder="${esc(fmtTime(g.sec))}"><p class="tip">Time yourself over the full ${esc(sgLabel(g))}. A watch or phone app works.</p></div>`
+    : kind === "lift"
+    ? `<div class="field" style="grid-column:span 2"><label for="sgt-w">Weight lb</label><input id="sgt-w" inputmode="decimal"></div><div class="field" style="grid-column:span 2"><label for="sgt-r">Reps</label><input id="sgt-r" inputmode="numeric" value="1"></div><p class="tip" style="grid-column:1/-1;margin:0">Your best set. Adonis works out your estimated max from it.</p>`
+    : `<div class="field wide"><label for="sgt-r">Reps in one set</label><input id="sgt-r" inputmode="numeric"><p class="tip">One all-out set, full range of motion.</p></div>`;
+  const shown = t => kind === "run" ? fmtTime(t.sec) : kind === "lift" ? `${t.w} lb × ${t.r}` : `${t.r} reps`;
+  return `<p class="sub">${esc(goalTitle(g))}</p><div class="card"><div class="row">
+      <div class="field wide"><label for="sgt-d">Date</label><input id="sgt-d" type="date" value="${esc(todayStr())}" max="${esc(todayStr())}"></div>${f}
+    </div><div class="err" id="sgerr" role="alert"></div><button class="primary" data-sg="savetest" data-id="${esc(g.id)}">Save test</button></div>
+    ${list.length ? `<h3 class="ch" style="margin-top:18px">Past tests</h3><div class="card"><ul class="log">${list.map(t=>`<li><span>${esc(sd(t.d))}</span><span>${esc(shown(t))} <button class="xbtn" data-sgtdel="${esc(g.id)}|${esc(t.id)}" aria-label="Remove test from ${esc(sd(t.d))}">✕</button></span></li>`).join("")}</ul></div>` : ""}`;
 }
 
 /* ----- body tab events ----- */
 document.addEventListener("click", e=>{
-  const t = e.target.closest("[data-bsub],[data-hday],[data-hmonth],[data-goday],[data-recscope],[data-sg],[data-sgdel]"); if(!t) return;
+  const t = e.target.closest("[data-bsub],[data-hday],[data-hmonth],[data-goday],[data-recscope],[data-sg],[data-sgdel],[data-sgtest],[data-sgtdel]"); if(!t) return;
   if(t.dataset.bsub !== undefined){ bsub = t.dataset.bsub; render(); window.scrollTo(0,0); return; }
   if(t.dataset.hday){ histDay = t.dataset.hday; render(); return; }
   if(t.dataset.hmonth){ histMonth = t.dataset.hmonth; render(); return; }
@@ -1613,15 +1619,35 @@ document.addEventListener("click", e=>{
   if(t.dataset.recscope){ recScope = t.dataset.recscope; render(); return; }
   if(t.dataset.sgdel){ S.sgoals = (S.sgoals||[]).filter(g=>g.id!==t.dataset.sgdel); cacheLocal(); render(); return; }
   if(t.dataset.sg==="add"){ openSheet("New strength goal", goalForm()); return; }
+  const sgErr = m => { $("#sgerr").textContent = m; };
   if(t.dataset.sg==="save"){
-    const n = $("#sg-n").value, w = num($("#sg-w").value), r = Math.floor(num($("#sg-r").value)) || 1, by = $("#sg-by").value;
-    if(w < 0 || w > 2000){ $("#sgerr").textContent = "Enter a weight in pounds, or leave it blank for a reps goal."; return; }
-    if(!w && r < 2){ $("#sgerr").textContent = "For a bodyweight goal, enter how many reps you're aiming for."; return; }
-    if(r > 100){ $("#sgerr").textContent = "Enter 100 reps or fewer."; return; }
-    S.sgoals = S.sgoals || []; S.sgoals.push({id: Date.now().toString(36), n, w, r, by, made: todayStr()});
+    const id = $("#sg-n").value, b = sgFind(id), by = $("#sg-by").value; if(!b) return;
+    const g = {id: Date.now().toString(36), kind: b.kind, n: id, label: b.label, by, made: todayStr(), tests: []};
+    if(b.kind==="run"){ const sec = parseTime($("#sg-t").value); if(!(sec >= 120 && sec <= 6*3600)) return sgErr("Enter a time like 7:45 (minutes:seconds)."); g.dist = +id.split(":")[1]; g.sec = sec; }
+    else if(b.kind==="lift"){ const w = num($("#sg-w").value), r = Math.floor(num($("#sg-r").value)) || 1;
+      if(!(w > 0 && w <= 2000)) return sgErr("Enter the weight you're aiming for, in pounds."); if(r > 30) return sgErr("Enter 30 reps or fewer."); g.w = w; g.r = r; }
+    else { const r = Math.floor(num($("#sg-r").value)); if(!(r >= 2 && r <= 200)) return sgErr("Enter how many reps you're aiming for in one set."); g.w = 0; g.r = r; }
+    S.sgoals = S.sgoals || []; S.sgoals.push(g);
     cacheLocal(); closeBuilder(); showToast("Goal set. Go get it."); return;
   }
+  if(t.dataset.sgtest){ const g = (S.sgoals||[]).find(x=>x.id===t.dataset.sgtest); if(g) openSheet("Log a test", testForm(g)); return; }
+  if(t.dataset.sgtdel){ const [gid, tid] = t.dataset.sgtdel.split("|"), g = (S.sgoals||[]).find(x=>x.id===gid); if(!g) return;
+    g.tests = (g.tests||[]).filter(x=>x.id!==tid); cacheLocal(); openSheet("Log a test", testForm(g)); return; }
+  if(t.dataset.sg==="savetest"){
+    const g = (S.sgoals||[]).find(x=>x.id===t.dataset.id); if(!g) return;
+    const d = $("#sgt-d").value || todayStr(), kind = sgKind(g), test = {id: Date.now().toString(36), d};
+    if(d > todayStr()) return sgErr("Pick today or an earlier date.");
+    if(kind==="run"){ const sec = parseTime($("#sgt-t").value); if(!(sec >= 120 && sec <= 6*3600)) return sgErr("Enter your time like 7:45 (minutes:seconds)."); test.sec = sec; }
+    else if(kind==="lift"){ const w = num($("#sgt-w").value), r = Math.floor(num($("#sgt-r").value)) || 1;
+      if(!(w > 0 && w <= 2000)) return sgErr("Enter the weight you lifted, in pounds."); if(r > 50) return sgErr("Enter 50 reps or fewer."); test.w = w; test.r = r; }
+    else { const r = Math.floor(num($("#sgt-r").value)); if(!(r >= 1 && r <= 300)) return sgErr("Enter how many reps you did in one set."); test.w = 0; test.r = r; }
+    const before = goalHit(g);
+    g.tests = (g.tests||[]).concat(test); cacheLocal(); closeBuilder();
+    if(!before && goalHit(g)) celebrate(`Goal hit: ${goalTitle(g)}.`, true); else showToast("Test logged.", true);
+    return;
+  }
 });
+document.addEventListener("change", e=>{ if(e.target.id==="sg-n"){ const f = $("#sg-f"); if(f) f.innerHTML = goalFields(e.target.value); } });
 document.addEventListener("change", e=>{ if(e.target.id==="plift"){ progLift = e.target.value; render(); } });
 
 /* log or un-log one set (list view and workout mode share this) */
@@ -2646,7 +2672,7 @@ function checkBodyWins(d, what){
 
 /* ---------- account menu: reset plans, send feedback ---------- */
 const FEEDBACK_EMAIL = "feedback.adonisapp@gmail.com";   // set to the feedback inbox, e.g. "adonis.feedback@gmail.com"
-const APP_VERSION = "2026.11.20.1";   // bump with the cache VERSION in sw.js on every release
+const APP_VERSION = "2026.11.20.2";   // bump with the cache VERSION in sw.js on every release
 function openMenu(){
   const u = Cloud.user;
   openSheet("Your Adonis", `<div class="sheetbrand"><svg class="mark" aria-hidden="true"><use href="#adonis-mark"/></svg><span class="wordmark">ADONIS</span></div><div class="menu-list">
