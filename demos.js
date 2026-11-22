@@ -6,6 +6,7 @@
 
 const L = { torso: 46, neck: 4, head: 9, ua: 27, fa: 25, th: 36, sh: 34, foot: 11 };
 const G = 138;                     // floor line
+const ANKLE_MIN = 50;              // smallest angle between shin and foot (about 40° of dorsiflexion, a deep squat)
 const rad = d => d * Math.PI / 180;
 
 /* two-bone IK: joint between a and b. s = which side the joint bends to (1 or -1) */
@@ -13,7 +14,7 @@ function ik(ax, ay, bx, by, l1, l2, s) {
   s = s < 0 ? -1 : 1;                 // a bend direction blended between frames must never collapse to 0 (a locked, overshooting limb)
   const d = Math.hypot(bx - ax, by - ay);
   if (d > l1 + l2 + 0.5 && root.__adonisReach) root.__adonisReach(d - l1 - l2);   // dev check: a target the limb can't reach
-  const dm = Math.max(Math.abs(l1 - l2) + 0.5, Math.min(l1 + l2 - 0.2, d));
+  const dm = Math.max(Math.abs(l1 - l2) + 0.5, Math.min(l1 + l2 - 0.02, d));   // can reach (almost) dead straight: a locked-out knee or elbow
   const th = Math.atan2(by - ay, bx - ax);
   const a = Math.acos(Math.max(-1, Math.min(1, (l1 * l1 + dm * dm - l2 * l2) / (2 * l1 * dm))));
   const jx = ax + l1 * Math.cos(th + s * a), jy = ay + l1 * Math.sin(th + s * a);
@@ -66,6 +67,10 @@ function sideJoints(p) {
   const aaArm = p.aa != null ? byAngs(sh, p.aa, p.aa - 8, L.ua, L.fa) : p.ua != null ? byAngs(sh, p.ua, p.fa ?? p.ua, L.ua, L.fa) : null;
   const elb = p.er ? [sh[0] + p.er[0], sh[1] + p.er[1]] : null;
   // h3: hand in 3D. h3n (optional) is the hand's distance from the shoulder, blended separately so the hand travels in an arc
+  // ht3: hand in 3D but measured along the torso (forward, down, toward you), so it rides with the body as it tips;
+  // pt3 is the elbow's pole in the same frame. Used for arms crossed on the chest.
+  const tf = v => [v[0] * fwd[0] + v[1] * dn[0], v[0] * fwd[1] + v[1] * dn[1], v[2]];
+  if (p.ht3) { p = { ...p, h3: tf(p.ht3), pole: tf(p.pt3 || [1, 1.4, 0]), h3n: undefined }; }
   const h3 = p.h3 && typeof p.h3n === "number" ? (() => { const l = Math.hypot(...p.h3) || 1; return p.h3.map(v => v / l * p.h3n); })() : p.h3;
   const a3 = h3 ? ik3(h3, L.ua, L.fa, p.pole || [0, 1, 1]) : null;
   const A1 = a3 ? [sh[0] + a3.e[0], sh[1] + a3.e[1], sh[0] + a3.h[0], sh[1] + a3.h[1]] : aaArm ? aaArm : p.er ? [elb[0], elb[1], ...(p.fa != null ? [elb[0] + L.fa * Math.cos(rad(p.fa)), elb[1] + L.fa * Math.sin(rad(p.fa))] : [sh[0] + p.hr[0], sh[1] + p.hr[1]])]
@@ -75,12 +80,21 @@ function sideJoints(p) {
   const L1 = byAng ? [byAng[0][0], byAng[0][1], an[0], an[1]] : leg(an, p.kb ?? -1);
   // ta2 + sa2: the far leg by angles, like ta + sa
   const L2 = p.ta2 != null ? byAngs(hip, p.ta2, p.sa2 ?? p.ta2, L.th, L.sh) : byAng && an2 === an ? L1 : leg(an2, p.kb2 ?? p.kb ?? -1);
-  const foot = (ank, f) => [ank[0] + L.foot * Math.cos(rad(f)), ank[1] + L.foot * Math.sin(rad(f))];
+  // the ankle can only do what a real one can: the toes point to the front of the shin, and the foot can't fold up
+  // past ~40° of dorsiflexion (deep squat). Pointed toes (kneeling, legs straight out) are fine. mir: a figure that
+  // faces left (lying face down, head on the left), so front and back swap.
+  const footAng = (kn, ank, f) => {
+    const up = Math.atan2(kn[1] - ank[1], kn[0] - ank[0]) * 180 / Math.PI, sg = p.mir ? -1 : 1;
+    let r = sg * ((((f - up) + 180) % 360 + 360) % 360 - 180);
+    if (r < 0) r = r < -90 ? 180 : ANKLE_MIN; else if (r < ANKLE_MIN) r = ANKLE_MIN;
+    return up + sg * r;
+  };
+  const foot = (ank, f, kn) => { const a = footAng(kn, ank, f); return [ank[0] + L.foot * Math.cos(rad(a)), ank[1] + L.foot * Math.sin(rad(a))]; };
   return {
     hip, sh, head,
     elbow: [A1[0], A1[1]], hand: [A1[2], A1[3]], elbow2: [A2[0], A2[1]], hand2: [A2[2], A2[3]],
     knee: [L1[0], L1[1]], ankle: [L1[2], L1[3]], knee2: [L2[0], L2[1]], ankle2: [L2[2], L2[3]],
-    halo: !!p.halo, cc: p.crank ? [p.crank[0], p.crank[1]] : null, toe: foot([L1[2], L1[3]], p.ft ?? 0), toe2: foot([L2[2], L2[3]], p.ft2 ?? p.ft ?? 0),
+    halo: !!p.halo, cc: p.crank ? [p.crank[0], p.crank[1]] : null, toe: foot([L1[2], L1[3]], p.ft ?? 0, [L1[0], L1[1]]), toe2: foot([L2[2], L2[3]], p.ft2 ?? p.ft ?? 0, [L2[0], L2[1]]), mir: !!p.mir,
     shb: [sh[0] - 6 * Math.cos(t), sh[1] - 6 * Math.sin(t) - 2], shf: [sh[0] + 7 * Math.cos(t), sh[1] + 7 * Math.sin(t) - 2],
   };
 }
@@ -213,7 +227,7 @@ const hold = (A, d) => ({ A, B: mix(A, d, 1), hold: true });
 const r1 = n => Math.round(n * 10) / 10;
 /* a straight body pivoting at the ankle: th = lean from vertical (90 = flat, facing down, head to the right).
    Used for planks and push-ups (rigid from heels to head) and leaning pulls/pushes against a wall or door frame. */
-const lean = (ank, th) => ({ hip: [r1(ank[0] + 69.4 * Math.sin(rad(th))), r1(ank[1] - 69.4 * Math.cos(rad(th)))], t: th });
+const lean = (ank, th) => ({ hip: [r1(ank[0] + 69.98 * Math.sin(rad(th))), r1(ank[1] - 69.98 * Math.cos(rad(th)))], t: th });
 const HANG = { ua: 91, fa: 91 };                 // arms hanging straight down from the shoulders
 
 function loadProps(eq, at, at2) {
@@ -228,7 +242,7 @@ const T = {};
 T.squat = (o = {}) => {
   // bodyweight: arms straight out in front, level with the floor. Holds move with the torso.
   const hold_ = { goblet: { ht: [20, 10], eb: 1 }, band: { ht: [20, 10], eb: 1 }, back: { ht: [-7, -1], eb: -1 }, front: { ht: [4, -8], eb: 1 } }[o.arms];
-  const arms = hold_ || { hr: [51, 4], eb: -1 };
+  const arms = hold_ || { hr: [51, 4], eb: 1 };
   const A = { ...STAND, ...arms }, B = { hip: [99, 103], t: 38, an: [122, G], ...arms };
   const props = [];
   if (o.arms === "goblet") props.push({ k: "db", at: "hand", v: 1, front: true });
@@ -267,8 +281,8 @@ T.legpress = () => {
   // the sled runs on a fixed rail, so the feet travel in a straight line pointing at the hips. Feet flat on the plate.
   const hip = [78, 112], d = [Math.cos(rad(-40)), Math.sin(rad(-40))], at = n => [r1(hip[0] + n * d[0]), r1(hip[1] + n * d[1])];
   return {
-    A: { hip, t: -60, an: at(47), kb: 1, hand: [82, 114], ft: -125 },
-    B: { hip, t: -60, an: at(68), kb: 1, hand: [82, 114], ft: -125 },
+    A: { hip, t: -60, an: at(47), kb: -1, hand: [82, 114], ft: -125 },
+    B: { hip, t: -60, an: at(68), kb: -1, hand: [82, 114], ft: -125 },
     props: [{ k: "poly", pts: [[30, 82], [40, 76], [92, 116], [92, 124], [60, 124]] }, { k: "rect", x: 74, y: 124, w: 8, h: 14, rx: 1 },
       { k: "plat", front: true }],
   };
@@ -302,7 +316,7 @@ T.slam = () => ({   // overhead, then slam it into the floor in front of your fe
 // hip thrust / bridge
 T.thrust = (o = {}) => {
   if (o.floor) {
-    const A = { hip: [86, 131], t: -90, an: [126, G], kb: -1, hand: [91, 137], eb: -1, ft: 0 }, B = { hip: [82, 110], t: -116, hd: 26, an: [126, G], kb: -1, hand: [91, 137], eb: -1 };
+    const A = { hip: [86, 131], t: -90, an: [126, G], kb: -1, hand: [92.4, 136], eb: 1, ft: 0 }, B = { hip: [82, 110], t: -116, hd: 26, an: [126, G], kb: -1, hand: [92.4, 136], eb: 1 };
     if (o.sl) { A.an2 = null; A.ar2 = [64, -24]; B.ar2 = [66, -26]; A.kb2 = B.kb2 = 1; }
     if (o.heel) { A.an = [150, G]; B.an = [132, G]; A.hip = [96, 131]; B.hip = [94, 112]; A.t = -90; B.t = -113; }
     return { A, B, props: o.eq === "bb" ? [{ k: "plate", at: "hip", dy: -10, front: true }] : [] };
@@ -365,7 +379,7 @@ T.stepup = (o = {}) => {
 // presses lying down
 T.bench = (o = {}) => {
   // lockout: arms straight up over the shoulders. Bottom: elbows drop below the bench, forearms vertical under the weight.
-  let A = { hip: [128, 94], t: -90, an: [164, G], kb: 1, er: [1, -25], hr: [2, -50], hd: 0 }, B = { ...A, er: [12, 13], hr: [13, -13] };
+  let A = { hip: [128, 94], t: -90, an: [164, G], kb: -1, er: [1, -25], hr: [2, -50], hd: 0 }, B = { ...A, er: [12, 13], hr: [13, -13] };
   let props = [...LIE_BENCH];
   if (o.incline) {
     // back on a ~38° incline bench. Lockout: arms straight up over the upper chest.
@@ -453,7 +467,7 @@ T.pallof = (o = {}) => {
 };
 // push ups: the body stays rigid from heels to head and pivots at the toes; hands stay planted, elbows travel back toward the feet
 T.pushup = (o = {}) => {
-  const toes = { ft: 75, kb: 1, eb: 1, hd: 6 };
+  const toes = { ft: 75, kb: -1, eb: 1, hd: 6 };
   const pv = (ank, th, hand, extra) => ({ ...lean(ank, th), an: ank, hand, ...toes, ...extra });
   let A = pv([50, 129], 68.7, [156, G]), B = pv([50, 129], 84.5, [156, G]);
   const props = [];
@@ -462,8 +476,8 @@ T.pushup = (o = {}) => {
   if (o.decline) { A = pv([41.8, 94], 86.5, [156, G]); B = pv([41.8, 94], 102, [156, G]); props.push({ k: "rect", x: 22, y: 104, w: 44, h: 34 }); }
   if (o.pike) {
     // hips high in an upside-down V; bend the elbows to bring the top of the head toward the floor just in front of the hands
-    A = { hip: [101.8, 62.9], t: 121.6, an: [84, 130], ft: 60, kb: 1, hand: [140, G], eb: 1 };
-    B = { hip: [125.3, 74.2], t: 147.5, an: [84, 130], ft: 60, kb: 1, hand: [140, G], eb: 1 };
+    A = { hip: [101.8, 62.9], t: 121.6, an: [84, 130], ft: 60, kb: -1, hand: [140, G], eb: 1 };
+    B = { hip: [125.3, 74.2], t: 147.5, an: [84, 130], ft: 60, kb: -1, hand: [140, G], eb: 1 };
   }
   if (o.climb || o.taps || o.renegade) {
     // high plank with the far hand planted; the near arm (or a knee) does the work
@@ -490,11 +504,11 @@ T.pushup = (o = {}) => {
 T.plank = (o = {}) => {
   if (o.side) {
     // forearm side plank, seen from the front: elbow under the shoulder, one straight line from head to feet
-    return hold({ hip: [136.9, 117.3], t: -77.7, an: [204.7, 132.1], ft: -40, kb: 1, er: [0, 27], hr: [4, 29], hand2: [94, 56], eb2: -1, hd: -10 },
+    return hold({ hip: [136.9, 117.3], t: -77.7, an: [204.7, 132.1], ft: -40, kb: -1, er: [0, 27], hr: [4, 29], hand2: [94, 56], eb2: 1, hd: -10 },
                 { hip: [136.9, 115.8], t: -78.6 });
   }
   // forearm plank: elbows under the shoulders, forearms flat on the floor, body straight from heels to head
-  return hold({ ...lean([36, 129], 79.3), an: [36, 129], ft: 75, kb: 1, er: [0, 27], hr: [25, 27], hd: 6 }, lean([36, 129], 78.8));
+  return hold({ ...lean([36, 129], 79.3), an: [36, 129], ft: 75, kb: -1, er: [0, 27], hr: [25, 27], hd: 6 }, lean([36, 129], 78.8));
 };
 T.deadbug = () => {
   // on your back, arms up, knees over hips with the shins level. Reach one arm overhead as the OPPOSITE leg straightens,
@@ -510,8 +524,8 @@ T.birddog = () => {
     cap: "Reach one arm forward and the opposite leg back until both are level with your back. Keep your hips square." };
 };
 T.situp = () => ({   // arms crossed on the chest; sit all the way up, feet flat
-  A: { hip: [116, 131], t: -86, an: [160, G], kb: -1, ht: [8, 13], eb: -1 },
-  B: { hip: [116, 131], t: -4, an: [160, G], kb: -1, ht: [8, 13], eb: -1 },
+  A: { hip: [116, 131], t: -86, an: [160, G], kb: -1, ht3: [7, 10, -14] },
+  B: { hip: [116, 131], t: -4, an: [160, G], kb: -1, ht3: [7, 10, -14] },
 });
 T.heelslide = () => ({   // one heel slides out along the floor until the leg is straight, then back; the other foot stays planted
   A: { hip: [100, 131], t: -90, an: [134, 134], ft: -50, an2: [134, 134], ft2: -50, kb: -1, hand: [104, 136] },
@@ -559,13 +573,13 @@ T.row = (o = {}) => {
   const props = loadProps(o.eq, "hand", o.eq === "db" && !o.one ? "hand2" : null);
   if (o.one) {
     // free hand braced on a bench in front, arm straight
-    for (const f of [A, B]) Object.assign(f, { hip: [88, 84], t: 72, hand2: [171, 102], eb2: -1 });
+    for (const f of [A, B]) Object.assign(f, { hip: [88, 84], t: 72, hand2: [172.5, 103], eb2: 1 });
     props.unshift({ k: "rect", x: 150, y: 104, w: 44, h: 34 });
   }
   if (o.chest) {
     // lying chest-down on an incline pad, toes on the floor behind; arms hang straight down past the pad and row up
-    Object.assign(A, { hip: [96, 96], t: 50, an: [44, G], kb: 1, ft: 0, ua: 90, fa: 90 });
-    Object.assign(B, { hip: [96, 96], t: 50, an: [44, G], kb: 1, ft: 0, ua: 182, fa: 92 });
+    Object.assign(A, { hip: [96, 96], t: 50, an: [34, 127], kb: -1, ft: 65, ua: 90, fa: 90 });
+    Object.assign(B, { hip: [96, 96], t: 50, an: [34, 127], kb: -1, ft: 65, ua: 182, fa: 92 });
     props.unshift({ k: "poly", pts: [[97, 104], [137, 70], [142, 76], [103, 111]] },            // pad, right under the chest
       { k: "rect", x: 117, y: 92, w: 6, h: 46, rx: 1 }, { k: "rect", x: 100, y: 132, w: 40, h: 6, rx: 2 });
   }
@@ -574,7 +588,7 @@ T.row = (o = {}) => {
 T.ytraise = () => {
   // chest down on an incline bench, toes on the floor. Y: arms reach up past your head in line with your body.
   // T: arms straight out to the sides; from the side they point at you, so they look short.
-  const base = { hip: [96, 96], t: 50, an: [44, G], kb: 1, ft: 0, arc: 1, halo: 1, hd: 12 };
+  const base = { hip: [96, 96], t: 50, an: [34, 127], kb: -1, ft: 65, arc: 1, halo: 1, hd: 12 };
   const hang = { ...base, h3: [0, 51, 2], pole: [0, 1, 0.3] };
   const Y = { ...base, h3: [36, -28, 22], pole: [0, -1, 0.5] }, Tp = { ...base, h3: [-2, 4, 51], pole: [0, -1, 0] };
   return { keys: [hang, Y, hang, Tp, hang], loop: true, per: 5600, A: hang, B: Y,
@@ -604,8 +618,8 @@ T.pulldown = (o = {}) => ({
 T.pullup = (o = {}) => ({
   // dead hang with straight arms, then pull until the chin clears the bar (seen end-on). Elbows drive down and
   // slightly forward, the body leans back a touch, and the legs hang quietly with soft knees.
-  A: { hip: [119.2, 59.2], t: -4, ar: [-12, 63], kb: 1, ft: 60, hand: [120, -38], eb: 1 },
-  B: { hip: [116.6, 10], t: -12, hd: -10, ar: [-12, 63], kb: 1, ft: 60, hand: [120, -38], eb: 1 },
+  A: { hip: [119.2, 59.2], t: -4, ar: [-12, 63], kb: -1, ft: 60, hand: [120, -38], eb: 1 },
+  B: { hip: [116.6, 10], t: -12, hd: -10, ar: [-12, 63], kb: -1, ft: 60, hand: [120, -38], eb: 1 },
   props: [{ k: "line", a: [120, -38], b: [120, -53], w: 3 }, { k: "pad", at: [120, -38], r: 4.5 }, ...(o.band ? [{ k: "band", from: [120, -36], to: "ankle" }] : [])],
 });
 T.straightarm = () => ({
@@ -709,8 +723,8 @@ T.dips = (o = {}) => o.bench ? {
   props: [{ k: "rect", x: 52, y: 100, w: 52, h: 38 }],
 } : {
   // lean forward and lower until the upper arms are level: shoulders travel forward of the hands, elbows go back
-  A: { hip: [120, 42.3], t: 10, ar: [-22, 56], kb: 1, ft: 60, hand: [126, 48], eb: 1 },
-  B: { hip: [121.4, 62.6], t: 28, ar: [-22, 56], kb: 1, ft: 60, hand: [126, 48], eb: 1 },
+  A: { hip: [120, 42.3], t: 10, ar: [-22, 56], kb: -1, ft: 60, hand: [126, 48], eb: 1 },
+  B: { hip: [121.4, 62.6], t: 28, ar: [-22, 56], kb: -1, ft: 60, hand: [126, 48], eb: 1 },
   props: [{ k: "line", a: [100, 50], b: [150, 50], w: 5 }, { k: "line", a: [146, 50], b: [146, G], w: 4 }],
 };
 T.walltri = () => {
@@ -732,7 +746,7 @@ T.legext = (o = {}) => {
 T.lyingcurl = (o = {}) => {
   // face down on the machine, hips on the pad and knees just past its end. Thighs stay down; the shins swing up around the
   // knees toward the glutes, pushing the ankle pad. The pad is on a cable to the weight stack.
-  const base = { hip: [112, 94], t: -90, ta: 0, hand: [58, 108], eb: -1, hd: 0 };
+  const base = { hip: [112, 94], t: -90, ta: 0, hand: [58, 108], eb: -1, hd: 0, mir: 1 };   // face down, head on the left
   const A = { ...base, sa: 0, ft: 90 }, B = { ...base, sa: -100, ft: -10 };
   const props = [{ k: "rect", x: 50, y: 98, w: 98, h: 8 }, { k: "rect", x: 62, y: 106, w: 6, h: 32, rx: 1 }, { k: "rect", x: 132, y: 106, w: 6, h: 32, rx: 1 },
     { k: "rect", x: 52, y: 106, w: 10, h: 4, rx: 2 }];                                       // handles under the front of the pad
@@ -749,8 +763,8 @@ T.standcurl = () => ({
 });
 T.sliders = () => ({
   // shoulders stay down and the hips stay up; pull the heels in on the sliders, then push them back out
-  A: { pin: [66, 131], t: -105, hd: 15, an: [178, 134], kb: -1, ft: -60, hand: [116, 136], eb: -1 },
-  B: { pin: [66, 131], t: -117, hd: 27, an: [146, 134], kb: -1, ft: -60, hand: [116, 136], eb: -1 },
+  A: { pin: [66, 131], t: -105, hd: 15, an: [178, 134], kb: -1, ft: -60, hand: [117.8, 136], eb: 1 },
+  B: { pin: [66, 131], t: -117, hd: 27, an: [146, 134], kb: -1, ft: -60, hand: [117.8, 136], eb: 1 },
   props: [{ k: "under", at: "ankle", dx: -2, w: 14 }],
 });
 T.calf = (o = {}) => ({
@@ -778,8 +792,8 @@ T.kickback = (o = {}) => ({
 });
 T.backext = () => ({
   // legs locked on the pad, arms crossed on the chest; hinge down at the hips, then rise until the body is one straight line
-  A: { hip: [116, 82], t: 135, an: [62, 124], ft: 0, ht: [7, 12], eb: -1, hd: 15 },
-  B: { hip: [116, 82], t: 50, an: [62, 124], ft: 0, ht: [7, 12], eb: -1 },
+  A: { hip: [116, 82], t: 135, an: [62, 124], ft: 0, ht3: [7, 10, -14], hd: 15 },
+  B: { hip: [116, 82], t: 50, an: [62, 124], ft: 0, ht3: [7, 10, -14] },
   props: [{ k: "poly", pts: [[110, 88], [122, 88], [80, 132], [68, 132]] }, { k: "rect", x: 50, y: 130, w: 30, h: 8 }, { k: "pad", at: "ankle", dx: -4, dy: -8, r: 5, front: true }],
 });
 T.sidelying = () => ({
@@ -821,11 +835,11 @@ T.burpee = () => {
   const S = { ...STAND, ua: 92, fa: 92 };
   const C = { hip: [106, 110], t: 60, an: [122, G], ua: 84, fa: 84 };
   const J1 = { hip: [110, 98], t: 76, an: [70, 108], ft: 60, ua: 93.8, fa: 93.8 };
-  const P = { ...lean([50, 129], 68.7), an: [50, 129], ft: 75, kb: 1, ua: 97, fa: 97 };
+  const P = { ...lean([50, 129], 68.7), an: [50, 129], ft: 75, kb: -1, ua: 97, fa: 97 };
   const Air = { hip: [121, 47], t: 2, an: [124, 116], ft: 60, ua: -86, fa: -92 };
   return { keys: [S, C, J1, P, J1, C, Air, S], loop: true, per: 4200, A: S, B: P };
 };
-T.bridgebreath = () => ({ A: { hip: [86, 131], t: -90, an: [126, G], kb: -1, hand: [91, 137], eb: -1 }, B: { hip: [84, 118], t: -106, hd: 16, an: [126, G], kb: -1, hand: [91, 137], eb: -1 } });
+T.bridgebreath = () => ({ A: { hip: [86, 131], t: -90, an: [126, G], kb: -1, hand: [92.4, 136], eb: 1 }, B: { hip: [84, 118], t: -106, hd: 16, an: [126, G], kb: -1, hand: [92.4, 136], eb: 1 } });
 
 // front-view templates
 const FV = (A, B, props) => ({ view: "front", A, B, props });
@@ -1026,9 +1040,11 @@ function normSide(p, m) {
   m = m || {};
   const J = sideJoints(p);
   const ft = p.ft ?? 0, kb = p.kb ?? -1, eb = p.eb ?? 1;
-  const o = { halo: p.halo, t: p.t || 0, hd: p.hd || 0, ft, ft2: p.ft2 ?? ft, kb, kb2: p.kb2 ?? kb, eb, eb2: p.eb2 ?? eb };
+  const o = { halo: p.halo, mir: p.mir, t: p.t || 0, hd: p.hd || 0, ft, ft2: p.ft2 ?? ft, kb, kb2: p.kb2 ?? kb, eb, eb2: p.eb2 ?? eb };
   if (m.pin) o.pin = p.pin; else o.hip = J.hip;
-  if (m.h3) { o.h3 = p.h3; o.pole = p.pole || [0, 1, 1]; if (m.h3n) o.h3n = Math.hypot(...p.h3); }
+  if (m.ht3) { o.ht3 = p.ht3; o.pt3 = p.pt3 || [1, 1.4, 0]; }
+  else if (m.ht) { o.ht = p.ht; }
+  else if (m.h3) { o.h3 = p.h3; o.pole = p.pole || [0, 1, 1]; if (m.h3n) o.h3n = Math.hypot(...p.h3); }
   else if (m.ua) { o.ua = p.ua; o.fa = p.fa ?? p.ua; }
   else if (m.aa) o.aa = p.aa;
   else if (m.er) { o.er = p.er; if (p.fa != null) o.fa = p.fa; else o.hr = p.hr; }
@@ -1044,7 +1060,7 @@ function normSide(p, m) {
 /* which settings every frame shares, so they blend as settings (angles, 3D hands) instead of as positions */
 function flags(list) {
   const all = q => list.every(x => x[q] != null), any = q => list.some(x => x[q] != null);
-  return { h3: all("h3"), h3n: list.some(x => x.arc), ua: all("ua"), aa: all("aa"), er: all("er"), pin: all("pin"), hh: all("hh"), ta: all("ta"),
+  return { ht3: all("ht3"), ht: all("ht"), h3: all("h3"), h3n: list.some(x => x.arc), ua: all("ua"), aa: all("aa"), er: all("er"), pin: all("pin"), hh: all("hh"), ta: all("ta"),
     ar2: all("ar2"), an2: all("an2"), ua2: all("ua2"), ta2: all("ta2"), cr: all("cr"), h2: any("hand2") || any("ht2") || any("hr2") };
 }
 function normFront(p) {
@@ -1154,5 +1170,11 @@ function fill(el) {
   (el || document).querySelectorAll("[data-demo]").forEach(fillOne);
   kick();
 }
-root.AdonisDemos = { has: n => !!(vidFor(n) || demoFor(n)), svg, fill, demoFor, video: vidFor };
+/* the joints at k (0..1), for the anatomy checks in tests/ */
+function pose(name, k) {
+  const d = demoFor(name); if (!d || d.custom) return null;
+  const p = mid3(d, k);
+  return { view: d.view === "front" ? "front" : "side", J: d.view === "front" ? frontJoints(p) : sideJoints(p), d };
+}
+root.AdonisDemos = { pose, has: n => !!(vidFor(n) || demoFor(n)), svg, fill, demoFor, video: vidFor };
 })(typeof window !== "undefined" ? window : globalThis);
