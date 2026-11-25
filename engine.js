@@ -438,6 +438,94 @@ function recoveryPlan(a) {
   };
 }
 
+/* ---------- supersets ----------
+   Two exercises done back to back, then one rest. Only pairs that don't fight each other:
+   opposing muscles (push + pull, biceps + triceps, quads + hamstrings) or muscles far apart (shoulders + core).
+   Opposing-muscle supersets keep strength and volume about the same while cutting session time
+   (Robbins et al., 2010; Weakley et al., 2017). Heavy squats, hinges and lunges always get their full rest. */
+const SS_PAIRS = {
+  // 2 = opposing muscles, 1 = unrelated muscles
+  "biceps|triceps": 2, "h_pull|h_push": 2, "v_pull|v_push": 2, "h_pull|incline_push": 2, "incline_push|v_pull": 2,
+  "h_push|v_pull": 2, "h_pull|v_push": 2, "chest_iso|rear_delt": 2, "ham_iso|quad_iso": 2, "chest_iso|h_pull": 2, "chest_iso|v_pull": 2,
+  "core|lat_raise": 1, "calves|core": 1, "biceps|lat_raise": 1, "lat_raise|triceps": 1, "biceps|rear_delt": 1, "rear_delt|triceps": 1,
+  "biceps|chest_iso": 1, "biceps|core": 1, "core|triceps": 1, "calves|ham_iso": 1, "calves|quad_iso": 1, "calves|glute": 1,
+  "core|glute": 1, "core|rear_delt": 1, "calves|lat_raise": 1, "calves|biceps": 1, "calves|triceps": 1,
+};
+// full-body days: upper-body work pairs with lower-body isolation (different muscles, no shared fatigue)
+["h_push", "incline_push", "v_push", "h_pull", "v_pull", "chest_iso", "lat_raise", "rear_delt", "biceps", "triceps"].forEach(u =>
+  ["ham_iso", "quad_iso", "glute", "calves"].forEach(l => { const k = [u, l].sort().join("|"); if (!SS_PAIRS[k]) SS_PAIRS[k] = 1; }));
+const SS_COMPOUND =new Set(["h_push", "incline_push", "v_push", "h_pull", "v_pull"]);
+const SS_NOTE_A = "Superset with the next exercise: one set of each, back to back, then rest";
+const SS_NOTE_B = "Superset with the exercise above: rest after this one";
+const SS_MAX = { strength: 1, muscle: 2, general: 2, fatloss: 3 };
+function addNote(it, t) { it.note = it.note ? it.note + ". " + t : t; }
+function dropNote(it, t) { it.note = (it.note || "").split(". ").filter(s => s !== t).join(". "); }
+function superset(items, ctx, goal) {
+  if (ctx.mode !== "normal") return;                                       // pregnancy and postpartum keep full rests
+  const strengthy = goal === "strength";
+  // beginners: one pair while they learn the lifts. Strength goals: only small accessories, so the big lifts get full rest
+  const max = ctx.level <= 1 ? 1 : SS_MAX[goal] || 2;
+  const isoOnly = strengthy;
+  const cand = [];
+  items.forEach((it, i) => {
+    const x = BY_NAME[it.n];
+    if (i < 2 || !x || x.p === "cond" || x.p === "pf" || x.p === "pfwarm") return;   // the day's main lifts get full rest
+    if (SS_COMPOUND.has(x.p) && isoOnly) return;
+    if (x.eq.includes("bb") && x.d >= 4) return;                            // heavy barbell work gets full rest
+    cand.push([i, x.p]);
+  });
+  const opts = [];
+  for (let u = 0; u < cand.length; u++) for (let v = u + 1; v < cand.length; v++) {
+    const [i, pi] = cand[u], [j, pj] = cand[v];
+    const sc = SS_PAIRS[[pi, pj].sort().join("|")];
+    if (sc) opts.push({ i, j, sc });
+  }
+  // best matches first, then keep the plan's order as much as possible
+  opts.sort((A, B) => B.sc - A.sc || (A.i + A.j) - (B.i + B.j));
+  const taken = new Set(), pairs = [];
+  for (const o of opts) {
+    if (pairs.length >= max) break;
+    if (taken.has(o.i) || taken.has(o.j)) continue;
+    taken.add(o.i); taken.add(o.j); pairs.push(o);
+  }
+  if (!pairs.length) return;
+  // put each pair next to each other, where the first of the two used to be
+  const partner = {}; pairs.forEach(o => { partner[o.i] = o.j; partner[o.j] = -1; });
+  const order = [];
+  items.forEach((it, i) => {
+    if (partner[i] === -1) return;
+    order.push(it);
+    if (partner[i] !== undefined) {
+      const B = items[partner[i]];
+      it.pair = "a"; B.pair = "b"; addNote(it, SS_NOTE_A); addNote(B, SS_NOTE_B);
+      order.push(B);
+    }
+  });
+  items.splice(0, items.length, ...order);
+}
+// after exercises are trimmed, a superset missing its partner goes back to a normal exercise
+function unpairOrphans(items) {
+  items.forEach((it, i) => {
+    if (!it.pair) return;
+    const ok = it.pair === "a" ? items[i + 1] && items[i + 1].pair === "b" : items[i - 1] && items[i - 1].pair === "a";
+    if (!ok) { dropNote(it, it.pair === "a" ? SS_NOTE_A : SS_NOTE_B); delete it.pair; }
+  });
+}
+/* minutes for a day: ~40 s of work per set, rest after each set, and a superset shares one rest per round
+   (plus ~15 s to switch stations), and about 8 minutes to warm up */
+function sessionMinutes(items, setsOf, restOf) {
+  let sec = 8 * 60;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i], nx = items[i + 1];
+    if (it.pair === "a" && nx && nx.pair === "b") {
+      const sa = setsOf(it), sb = setsOf(nx);
+      sec += (sa + sb) * 40 + Math.max(sa, sb) * (Math.max(restOf(it), restOf(nx)) + 15);
+      i++;
+    } else sec += setsOf(it) * (40 + restOf(it));
+  }
+  return sec / 60;
+}
+
 /* ---------- main ---------- */
 function generate(a) {
   const ctx = context(a);
@@ -497,21 +585,15 @@ function generate(a) {
       note: x.p === "cond" ? "Finisher. Rounds of 30 seconds hard, 30 seconds easy." : (x.n === "Single-Leg Dumbbell RDL" ? "Reps are for each leg" : (x.p === "lunge" ? "Reps are for each leg" : "")),
       ...(x.n === "Push Up" ? { amrap: true } : {})
     }));
-    if (goal === "fatloss") {
-      // superset the last two accessories (not the finisher)
-      const acc = items.filter((it, i) => i >= 2 && !it.note.startsWith("Finisher"));
-      if (acc.length >= 2) {
-        const A = acc[acc.length - 2], B = acc[acc.length - 1];
-        A.pair = "a"; B.pair = "b"; A.note = (A.note ? A.note + ". " : "") + "Superset with the next exercise";
-      }
-    }
+    // supersets: pair accessories that don't compete, so they share one rest
+    superset(items, ctx, goal);
     // keep the session inside the time they picked (estimate: ~40 s per set plus rest, plus a warm-up)
     const restOf = it => { const x = BY_NAME[it.n]; const big = x && x.c && x.d >= 3; return goal === "strength" ? (big ? 180 : 90) : goal === "fatloss" ? (big ? 90 : 60) : (big ? 120 : 75); };
     // estimate with the hardest week's sets (weeks 2-3 add sets), not week 1
     const peak = it => Math.max(...it.wk.slice(0, 3).map(w => w.s || 0));
-    const est = () => 8 + items.reduce((a, it) => a + peak(it) * (40 + restOf(it)) / 60, 0);
+    const est = () => sessionMinutes(items, peak, restOf);
     const limit = (+a.time || 45) + 5;
-    while (items.length > 4 && est() > limit) { const k = items.length - 1 - (items[items.length - 1].note.startsWith("Finisher") ? 1 : 0); items.splice(k, 1); }
+    while (items.length > 4 && est() > limit) { const k = items.length - 1 - (items[items.length - 1].note.startsWith("Finisher") ? 1 : 0); items.splice(k, 1); unpairOrphans(items); }
     // still long (short sessions with big sets): take a set off the biggest lifts, never below 2
     for (let guard = 0; guard < 30 && est() > limit; guard++) {
       const big = items.filter(it => peak(it) > 2 && !it.note.startsWith("Finisher")).sort((x, y) => peak(y) - peak(x))[0];
@@ -807,5 +889,5 @@ function audit(p) {
   return issues;
 }
 
-root.AdonisEngine = { LIB, BY_NAME, FLIB, generate, swap, audit, PF_NOTES, trimesterFor };
+root.AdonisEngine = { LIB, BY_NAME, FLIB, generate, swap, audit, PF_NOTES, trimesterFor, sessionMinutes };
 })(typeof window !== "undefined" ? window : globalThis);

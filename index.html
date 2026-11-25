@@ -798,6 +798,16 @@ function dayDef(dn){ return S.plan ? S.plan.days[dn-1] : null; }
 function weekNote(w){ return S.plan ? S.plan.weekNotes[w-1] : ""; }
 function rx(e, w){ return e.wk ? e.wk[w-1] : {s:3, r:"10"}; }
 function shown(e, D){ return (D.swap && D.swap[e.n]) || e.n; }
+/* superset partner: "a" pairs with the "b" right after it (or tags like 3a/3b). null if the partner was removed */
+function ssPartner(list, e){
+  const i = list.indexOf(e); if(i<0) return null;
+  if(e.pair==="a") return list[i+1] && list[i+1].pair==="b" ? list[i+1] : null;
+  if(e.pair==="b") return list[i-1] && list[i-1].pair==="a" ? list[i-1] : null;
+  const m = e.tag && /^(.*?)([ab])$/.exec(e.tag);
+  if(m) return list.find(x=>x!==e && x.tag===m[1]+(m[2]==="a"?"b":"a")) || null;
+  return null;
+}
+const ssRole = (list, e) => ssPartner(list, e) ? (e.pair || e.tag.slice(-1)) : "";
 function isBW(name, e){ const x = E && E.BY_NAME[name]; return x ? (x.eq.length===0 && x.p!=="cond") : !!e.bw; }
 
 /* ---------- storage ---------- */
@@ -1009,8 +1019,9 @@ function renderTrain(){
   let n = 0;
   const cards = P.ex.map((e,ei)=>{
     if(e.type==="cardio" || e.type==="circuit"){ n++; return specialCard(e, ei, D, p.week, n); }
-    if(e.pair!=="b" && !(e.tag && e.tag.endsWith("b"))) n++;
-    const num_ = e.tag || (String(n) + (e.pair||""));
+    const role = ssRole(P.ex, e);
+    if(role!=="b") n++;
+    const num_ = e.tag || (String(n) + role);
     const name = shown(e, D);
     const R = rx(e, p.week);
     const sets = D.lifts[name] || [];
@@ -1052,7 +1063,7 @@ function renderTrain(){
       if(swapped) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(e.n)}">Undo</button><span class="was">Swapped from ${esc(e.n)}</span>`);
       if(bits.length) sw = `<div class="swaps">${bits.join("")}</div>`;
     }
-    return `<section class="ex${(e.tag||e.pair)?" linked":""}">
+    return `<section class="ex${role?" linked":""}">
       <div class="exhead"><span class="exnum">${esc(num_)}</span><span class="exname">${esc(name)}</span>${simple?"":`<span class="tagpill">${R.s} × ${esc(e.amrap&&!swapped?"max":R.r)}</span>`}</div>
       ${note?`<div class="exnote">${note}</div>`:""}
       ${cue||hasDemo(name)?`<details class="cue"><summary>How to do it</summary><div class="fdemo" data-demo="${esc(name)}" hidden></div>${cue?`<ul>${cue.split(" · ").map(c=>`<li>${esc(c)}</li>`).join("")}</ul>`:""}</details>`:""}
@@ -1773,7 +1784,14 @@ function toggleSet(D, name, orig, i, sw){
     const mine = CO.e1rm(num(s.w), num(s.r));
     if(!isPregnant() && prev > 0 && mine > prev && mine > today){ D.lifts[name].forEach(x=>delete x.pr); s.pr = true; celebrate(`New record: ${name}, ${s.w} lb × ${s.r}`, true); }
     const lib = E && E.BY_NAME[name];
-    if(!(lib && lib.p==="pfwarm")) startRest(CO.restFor(name, S.plan && S.plan.answers ? S.plan.answers.goal : "muscle", S.plan ? S.plan.mode : "normal"));
+    const goal = S.plan && S.plan.answers ? S.plan.answers.goal : "muscle", mode = S.plan ? S.plan.mode : "normal";
+    // superset: no rest between the two exercises, then one rest (the longer of the two) after the second
+    const mate = ex && ssPartner(P.ex, ex), mateName = mate && shown(mate, D);
+    const mateSets = mate ? (D.lifts[mateName] || []).slice(0, rx(mate, pi.week).s) : [];
+    const mineDone = mate ? D.lifts[name].slice(0, rx(ex, pi.week).s).filter(x=>x.done).length : 0;
+    if(mate && ssRole(P.ex, ex)==="a" && mateSets.some(x=>!x.done) && mineDone > mateSets.filter(x=>x.done).length){ REST = null; drawRest(); showToast(`Superset: straight to ${mateName}`); }
+    else if(mate) startRest(Math.max(CO.restFor(name, goal, mode), CO.restFor(mateName, goal, mode)));
+    else if(!(lib && lib.p==="pfwarm")) startRest(CO.restFor(name, goal, mode));
   } else { delete s.pr; }
 }
 function toggleComplete(D){
@@ -2652,14 +2670,16 @@ function renderFocus(){
       <div class="ftop"><button class="iconbtn" data-fclose aria-label="Back to the list">✕</button><svg class="mark-sm" aria-hidden="true"><use href="#adonis-mark"/></svg>
         <div class="fprog" role="progressbar" aria-label="Sets done" aria-valuenow="${done}" aria-valuemin="0" aria-valuemax="${total}"><i style="width:${total?Math.round(done/total*100):0}%"></i></div>
         <span class="fcount">${FOCUS.i+1} of ${L.length}</span></div>
-      <div class="fkick">${esc(dayDef(progInfo(cur).dn).name)}${e.pair||(e.tag&&/[ab]$/.test(e.tag))?" · Superset":""}</div>
+      <div class="fkick">${esc(dayDef(progInfo(cur).dn).name)}${ssRole(dayDef(progInfo(cur).dn).ex, e)?" · Superset":""}</div>
       <h2 class="fname">${esc(name)}</h2>
       <div class="frow"><span class="tagpill">${R.s} sets × ${esc(amrap?"max":R.r)}</span>${note?`<span class="tip" style="margin:0">${esc(note)}</span>`:""}</div>
       ${sug ? `<p class="fsug">${esc(sug.text)}</p>` : ""}
       <div class="fdemo" data-demo="${esc(name)}" hidden></div>
       ${cue ? `<details class="cue"><summary>Form tips</summary><ul>${cue.split(" · ").map(c=>`<li>${esc(c)}</li>`).join("")}</ul></details>` : ""}
       <div class="fsets">${rows}</div>${doneBox}
-      ${next && !finished ? `<p class="fnext">Next up: <b>${esc(next.name)}</b> · ${next.R.s} × ${esc(next.R.r)}</p>` : ""}
+      ${(()=>{ const P_ = dayDef(progInfo(cur).dn), mate = ssPartner(P_.ex, e), m = mate && L.find(x=>x.e===mate);
+        if(m && !finished) return `<p class="fnext">Superset with <b>${esc(m.name)}</b> · ${ssRole(P_.ex, e)==="a" ? "go straight there after each set" : "rest after each set, then go back"}</p>`;
+        return next && !finished ? `<p class="fnext">Next up: <b>${esc(next.name)}</b> · ${next.R.s} × ${esc(next.R.r)}</p>` : ""; })()}
     </div></div>
     <div class="fnav"><div class="in2">
       <button data-fnav="-1"${FOCUS.i===0?" disabled":""}>‹ Previous</button>
@@ -2698,9 +2718,20 @@ $("#focus").addEventListener("click", e=>{
     }
     toggleSet(D, it.name, it.e.n, i, sug && sug.w);
     saveDay(cur);
+    // superset: bounce between the two exercises until both are done
+    const P_ = dayDef(progInfo(cur).dn), mate = t.dataset.flog!==undefined && ssPartner(P_.ex, it.e);
+    const mi = mate ? L.findIndex(x=>x.e===mate) : -1;
+    const left = x => D.lifts[x.name].slice(0,x.R.s).filter(s=>!s.done).length, did = x => D.lifts[x.name].slice(0,x.R.s).filter(s=>s.done).length;
+    if(mi>=0 && left(L[mi]) > 0 && (ssRole(P_.ex, it.e)==="b" || did(it) > did(L[mi]))){
+      FOCUS.i = mi; showToast(ssRole(P_.ex, it.e)==="a" ? `Superset: straight to ${L[mi].name}` : `Rest, then back to ${L[mi].name}`);
+      requestAnimationFrame(()=>{ const w = $("#focus .fwrap"); if(w) w.scrollTop = 0; });
+      render(); return;
+    }
     // last set of this exercise: move to the next one while you rest
     if(t.dataset.flog!==undefined && sets.slice(0,it.R.s).every(s=>s.done) && FOCUS.i < L.length-1){
-      FOCUS.i++; showToast(`Up next: ${L[FOCUS.i].name}`);
+      // skip anything already finished (like the second half of a superset with fewer sets)
+      let j = FOCUS.i + 1; while(j < L.length-1 && !left(L[j])) j++;
+      FOCUS.i = j; showToast(`Up next: ${L[FOCUS.i].name}`);
       requestAnimationFrame(()=>{ const w = $("#focus .fwrap"); if(w) w.scrollTop = 0; });
     }
     render(); return;
