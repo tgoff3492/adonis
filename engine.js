@@ -776,6 +776,24 @@ function swap(name, dir, pctx, avoid) {
   return c[0].n;
 }
 
+/* ---------- travel swap: the closest exercise that fits the equipment you'll have ----------
+   Same movement pattern first, then the patterns FALLBACK allows; closest difficulty; ties go to one that uses the equipment you have, then the easier one.
+   Returns the name itself if it already fits, or null if nothing does. */
+function fitTo(name, pctx, avoid) {
+  const cur = BY_NAME[name];
+  if (!cur) return null;
+  const ctx = { eq: new Set(pctx.eq || []), block: new Set(pctx.block || []), maxD: pctx.maxD || 5 };
+  if (fits(cur, ctx)) return name;
+  const skip = new Set(avoid || []);
+  for (const pat of [cur.p, ...(FALLBACK[cur.p] || [])]) {
+    const c = LIB.filter(x => x.p === pat && x.n !== name && !skip.has(x.n) && fits(x, ctx));
+    if (!c.length) continue;
+    c.sort((a, b) => Math.abs(a.d - cur.d) - Math.abs(b.d - cur.d) || (b.c === cur.c) - (a.c === cur.c) || (b.eq.length > 0) - (a.eq.length > 0) || a.d - b.d);
+    return c[0].n;
+  }
+  return null;
+}
+
 /* ---------- self-check: rules every plan must pass (used by the Plan Lab) ---------- */
 function audit(p) {
   const issues = [];
@@ -807,5 +825,5 @@ function audit(p) {
   return issues;
 }
 
-root.AdonisEngine = { LIB, BY_NAME, FLIB, generate, swap, audit, PF_NOTES, trimesterFor };
+root.AdonisEngine = { LIB, BY_NAME, FLIB, generate, swap, fitTo, audit, PF_NOTES, trimesterFor };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -329,6 +329,9 @@ details.cue ul{margin:6px 0 0;padding-left:18px;color:var(--ink)}
 .wk .plan i{border-color:var(--ink)}
 .wk .did i{background:var(--cal);border-color:var(--cal)}
 .wk .miss i{border-style:dashed}
+.wk .sick i{background:var(--field);border-color:var(--line);color:var(--muted)}
+.lifenote p{margin:0}.lifenote p+p{margin-top:8px}
+.trips .log li{align-items:center}
 .wk .now{color:var(--ink);font-weight:700}
 .ci{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
 .ci input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--field);font-size:17px}
@@ -755,6 +758,7 @@ h2{font:700 22px/1.1 var(--display)}
 <script src="vendor/firebase.js"></script>
 <script src="cloud.js"></script>
 <script src="engine.js"></script>
+<script src="life.js"></script>
 <script src="nutrition.js"></script>
 <script src="meals.js"></script>
 <script src="foods.js"></script>
@@ -766,11 +770,12 @@ const DEFAULTS = {start:todayStr(), cal:2400, protein:175, carbs:265, fat:70, go
 const RECOVERY = ["Walking","Yoga","Stretching","Mobility","Hiking","Foam rolling","Biking"];
 
 /* ---------- state ---------- */
-let S = {settings:{...DEFAULTS}, days:{}, plan:null, profile:{}, nutri:null, blockSeen:{}, mealplan:null, foods:{}, recapSeen:{}, sgoals:[]};
+let S = {settings:{...DEFAULTS}, days:{}, plan:null, profile:{}, nutri:null, blockSeen:{}, mealplan:null, foods:{}, recapSeen:{}, sgoals:[], trips:[]};
 const Cloud = window.AdonisCloud;
 const MP = window.AdonisMeals;
 const N = window.AdonisNutrition;
 const E = window.AdonisEngine;
+const LF = window.AdonisLife;
 let cur = todayStr();
 let tab = "today";
 
@@ -789,20 +794,40 @@ function day(d){
   return S.days[d];
 }
 function progInfo(d){
-  const idx = diff(d, S.settings.start);
+  let idx = diff(d, S.settings.start);
   if(idx < 0) return {before:true, inDays:-idx};
+  idx -= LF.pausedBefore(pausedDays(), S.settings.start, d);   // 3+ sick days in a row pause the block
   return {cycle:Math.floor(idx/28)+1, week:Math.floor((idx%28)/7)+1, dn:idx%7+1};
 }
+/* ---------- sick days and trips (life.js) ---------- */
+let PAUSED = {sig:null, set:new Set()};
+function pausedDays(){
+  const sig = Object.keys(S.days).filter(k=>S.days[k] && S.days[k].sick).sort().map(k=>k+S.days[k].sick+(didWorkout(k)?"+":"")).join();
+  if(sig !== PAUSED.sig) PAUSED = {sig, set: LF.pausedDates(S.days, didWorkout)};
+  return PAUSED.set;
+}
+const sickOn = d => (S.days[d] && S.days[d].sick) || "";
+function setFactorOn(d){ return S.plan ? LF.setFactor(S.days, d, didWorkout) : 1; }
+let TRAVEL = {};   // date -> {original exercise: travel swap}; cleared on every render
+function tripOn(d){ return LF.tripOn(S.trips, d); }
+function travelFor(d){
+  if(d in TRAVEL) return TRAVEL[d];
+  let m = null; const trip = tripOn(d);
+  if(trip && S.plan){ const p = progInfo(d), P = p.before ? null : dayDef(p.dn); if(P && !P.rest) m = LF.tripSwaps(P.ex, trip, S.plan.ctx, E); }
+  return TRAVEL[d] = m;
+}
+const isTravelSwap = (e, D) => !(D.swap && D.swap[e.n]) && !!travelFor(D.date) && e.n in travelFor(D.date);
 
 function dayDef(dn){ return S.plan ? S.plan.days[dn-1] : null; }
 function weekNote(w){ return S.plan ? S.plan.weekNotes[w-1] : ""; }
-function rx(e, w){ return e.wk ? e.wk[w-1] : {s:3, r:"10"}; }
-function shown(e, D){ return (D.swap && D.swap[e.n]) || e.n; }
+// d: the day it's for, so sick days and the first sessions back get fewer sets
+function rx(e, w, d){ const r = e.wk ? e.wk[w-1] : {s:3, r:"10"}; if(!d) return r; const f = setFactorOn(d); return f > 0 && f < 1 ? {...r, s: LF.scaleSets(r.s, f)} : r; }
+function shown(e, D){ if(D.swap && D.swap[e.n]) return D.swap[e.n]; const t = D.date ? travelFor(D.date) : null; return (t && t[e.n]) || e.n; }
 function isBW(name, e){ const x = E && E.BY_NAME[name]; return x ? (x.eq.length===0 && x.p!=="cond") : !!e.bw; }
 
 /* ---------- storage ---------- */
 function cacheLocal(){try{localStorage.setItem("adonis-v1", JSON.stringify(S))}catch(e){} Cloud.touch()}
-function fromObj(o){o=o||{};return {settings:{...DEFAULTS,...o.settings},days:o.days||{},plan:o.plan||null,profile:o.profile||{},nutri:o.nutri||null,blockSeen:o.blockSeen||{},mealplan:o.mealplan||null,foods:o.foods||{},recapSeen:o.recapSeen||{},sgoals:o.sgoals||[]}}
+function fromObj(o){o=o||{};return {settings:{...DEFAULTS,...o.settings},days:o.days||{},plan:o.plan||null,profile:o.profile||{},nutri:o.nutri||null,blockSeen:o.blockSeen||{},mealplan:o.mealplan||null,foods:o.foods||{},recapSeen:o.recapSeen||{},sgoals:o.sgoals||[],trips:o.trips||[]}}
 function loadLocal(){try{const r=localStorage.getItem("adonis-v1");if(r)S=fromObj(JSON.parse(r))}catch(e){}}
 function setStatus(t){$("#status").textContent=t}
 const timers = {};
@@ -957,6 +982,7 @@ function nutriNow(onDate){
 }
 function isTrainingDay(d){
   if(!S.plan) return true;
+  if(sickOn(d)==="rest") return false;
   const p = progInfo(d); if(p.before) return false;
   const dd = dayDef(p.dn); return dd && !dd.rest;
 }
@@ -1002,9 +1028,10 @@ function renderTrain(){
   const p = progInfo(cur), D = day(cur);
   if(p.before) return planCard()+`<h2>Not started yet</h2><p class="sub">Your program starts ${esc(parse(S.settings.start).toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"}))}. Change the start date on the Body tab.</p>`;
   const P = dayDef(p.dn);
+  if(sickOn(cur)==="rest") return recapCard()+sickCard(cur)+tripsCard();
   if(P.rest){
     return recapCard()+planCard()+trainCrossCards(p)+`<p class="sub">Keep it easy. Tap what you did today.</p>
-      <div class="chips" id="recov">${RECOVERY.map(r=>`<button class="chip" data-rec="${esc(r)}" aria-pressed="${D.recovery.includes(r)}">${esc(r)}</button>`).join("")}</div>`;
+      <div class="chips" id="recov">${RECOVERY.map(r=>`<button class="chip" data-rec="${esc(r)}" aria-pressed="${D.recovery.includes(r)}">${esc(r)}</button>`).join("")}</div>`+tripsCard()+sickLink();
   }
   let n = 0;
   const cards = P.ex.map((e,ei)=>{
@@ -1012,7 +1039,7 @@ function renderTrain(){
     if(e.pair!=="b" && !(e.tag && e.tag.endsWith("b"))) n++;
     const num_ = e.tag || (String(n) + (e.pair||""));
     const name = shown(e, D);
-    const R = rx(e, p.week);
+    const R = rx(e, p.week, cur);
     const sets = D.lifts[name] || [];
     while(sets.length < R.s) sets.push({w:"",r:"",done:false});
     D.lifts[name] = sets;
@@ -1021,8 +1048,9 @@ function renderTrain(){
     const sug = CO && !e.amrap ? CO.suggest(name, sessionsFor(name, cur).slice(0,1), R.r, {mode}) : null;
     const hint = sug ? `<span class="sug">${esc(sug.text)}</span>` : last ? `Last time: ${last.w?esc(last.w)+" lb × ":""}${esc(last.r||"—")} reps` : "";
     const cue = CO ? CO.cues(name) : "";
-    const swapped = name !== e.n;
-    const noteTxt = swapped ? ((E && E.PF_NOTES[name]) || "") : (e.note || "");
+    const swapped = name !== e.n, travel = isTravelSwap(e, D);
+    const noFit = travel && !travelFor(cur)[e.n] ? "Nothing on this trip's equipment list matches. Add a set to another exercise, or skip this one" : "";
+    const noteTxt = noFit || (swapped ? ((E && E.PF_NOTES[name]) || "") : (e.note || ""));
     const note = [esc(noteTxt), hint].filter(Boolean).join(". ");
     const bw = isBW(name, e);
     const lib = E && E.BY_NAME[name];
@@ -1049,7 +1077,8 @@ function renderTrain(){
       const bits = [];
       if(easier) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(easier)}" aria-label="Swap for an easier exercise: ${esc(easier)}">Swap: easier</button>`);
       if(harder) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(harder)}" aria-label="Swap for a harder exercise: ${esc(harder)}">Swap: harder</button>`);
-      if(swapped) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(e.n)}">Undo</button><span class="was">Swapped from ${esc(e.n)}</span>`);
+      if(swapped && travel) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(e.n)}" data-keep="1">Use original</button><span class="was">Travel swap for ${esc(e.n)}</span>`);
+      else if(swapped) bits.push(`<button data-swap="${esc(e.n)}" data-to="${esc(e.n)}">Undo</button><span class="was">Swapped from ${esc(e.n)}</span>`);
       if(bits.length) sw = `<div class="swaps">${bits.join("")}</div>`;
     }
     return `<section class="ex${(e.tag||e.pair)?" linked":""}">
@@ -1061,9 +1090,9 @@ function renderTrain(){
   const restTxt = S.plan && S.plan.mode==="recovery" ? "Go slowly and rest whenever you need." : "Dark grey numbers are filled in for you: tap ✓ to log them as-is, or type what you actually did.";
   const liftCount = P.ex.filter(x=>x.type!=="cardio" && x.type!=="circuit").length;
   const anyDone = Object.values(D.lifts).some(ss=>ss.some(x=>x.done));
-  return `${recapCard()}${planLine(p)}${trainCrossCards(p)}${planNotes()}<p class="sub">${esc(weekNote(p.week).replace(/([^.!?])$/,"$1."))} ${restTxt}</p>
+  return `${recapCard()}${planLine(p)}${trainCrossCards(p)}${planNotes()}${lifeBanner(cur)}<p class="sub">${esc(weekNote(p.week).replace(/([^.!?])$/,"$1."))} ${restTxt}</p>
     <div id="lifts">${cards}</div>
-    <button class="primary${D.complete?" ok":""}" id="complete">${D.complete?"Workout finished ✓":"Finish workout"}</button>`;
+    <button class="primary${D.complete?" ok":""}" id="complete">${D.complete?"Workout finished ✓":"Finish workout"}</button>${tripsCard()}${sickLink()}`;
 }
 
 /* ---------- eat ---------- */
@@ -1384,7 +1413,7 @@ function todayView(){
       <div class="stat"><b>${isPregnant()?"—":st.prs.length}</b><span>New records</span></div>
     </div>
     <div class="stats prog">
-      <div class="stat"><b>${sk.weeks}</b><span>Week streak</span></div>
+      <div class="stat"><b>${sk.weeks}</b><span>Consistent weeks in a row</span></div>
       <div class="stat"><b>${sk.protein}</b><span>Days in a row at protein goal</span></div>
       <div class="stat"><b>${st.change==null?"—":(st.change>0?"+":"")+st.change}</b><span>Weight vs last week</span></div>
     </div>
@@ -1548,7 +1577,7 @@ function progressView(){
   const bf = seriesOf("bf"), waist = seriesOf("waist");
   let h = `<h2>Body weight</h2>
     ${trendChart(weights().map(x=>({d:x.d, v:x.w})), {avg:true, unit:" lb", goal: !preg && num(s.goalWeight) ? {v:num(s.goalWeight), d:s.goalDate||""} : null, aria:"Weight trend", empty:"Log your weight on a few mornings to see your trend here."})}
-    <p class="sub">${esc(paceText())}</p>`;
+    <p class="sub">${esc(forecastOn() ? forecastLine() : paceText())}</p>`;
   if(bf.length){
     h += `<h2>Body fat</h2>${trendChart(bf, {unit:"%", minPad:.5, label:"Body fat %", color:"var(--fat)", goal: !preg && num(s.goalBf) ? {v:num(s.goalBf), d:s.goalDate||""} : null, aria:"Body fat trend", empty:"Measure once a week to see a trend."})}`;
     const hows = new Set(bf.map(p=>S.days[p.d].bfHow||"known"));
@@ -1581,7 +1610,7 @@ function progressView(){
       <div class="field"><label for="g-bf">Body fat %</label><input id="g-bf" data-set="goalBf" inputmode="decimal" placeholder="e.g. 15" value="${esc(s.goalBf)}"></div>
       <div class="field" style="grid-column:span 2"><label for="g-date">By</label><input id="g-date" type="date" value="${esc(s.goalDate)}"></div>
       <div class="field" style="grid-column:span 2"><label for="t-start">Program start</label><input id="t-start" type="date" value="${esc(s.start)}"></div>
-    </div></div>
+    </div>${realityHTML()}</div>
     ${S.nutri?"":`<h2>Targets</h2><div class="card"><div class="row">
       ${[["cal","Calories"],["protein","Protein g"],["carbs","Carbs g"],["fat","Fat g"]].map(([k,l])=>`<div class="field"><label for="t-${k}">${l}</label><input id="t-${k}" data-set="${k}" inputmode="numeric" value="${esc(s[k])}"></div>`).join("")}
     </div><p class="tip">Set up nutrition on the Eat tab and these are calculated for you.</p></div>`}`;
@@ -1781,6 +1810,7 @@ function toggleComplete(D){
   if(D.complete && cur===todayStr() && firstTime(cur,"workout")){ const st = weekStats(weekStartOf(cur)); celebrate(`Workout done. That's ${st.done}${st.planned?` of ${st.planned}`:""} this week.`, true); }
 }
 function render(){
+  TRAVEL = {};
   renderHeader();
   document.querySelectorAll("[data-tab]").forEach(b=>b.setAttribute("aria-selected", b.dataset.tab===tab));
   $("#main").innerHTML = backupBanner() + (tab==="today" ? renderToday() : tab==="train" ? renderTrain() : tab==="eat" ? renderEat() : renderBody());
@@ -1808,7 +1838,7 @@ document.addEventListener("click", e=>{
     i>=0 ? D.recovery.splice(i,1) : D.recovery.push(r);
     t.setAttribute("aria-pressed", i<0); saveDay(cur); return;
   }
-  if(t.dataset.swap){D.swap=D.swap||{};if(t.dataset.to===t.dataset.swap)delete D.swap[t.dataset.swap];else D.swap[t.dataset.swap]=t.dataset.to;saveDay(cur);render();return}
+  if(t.dataset.swap){D.swap=D.swap||{};if(t.dataset.to===t.dataset.swap && !t.dataset.keep)delete D.swap[t.dataset.swap];else D.swap[t.dataset.swap]=t.dataset.to;saveDay(cur);render();return}
   if(t.dataset.bfm){ S.settings.bfMethod = t.dataset.bfm; saveSettings(); if(t.dataset.bfm!=="known" && (num(D.waist)||num(D.neck)||D.sf)) { recalcBf(D, cur); saveDay(cur); } render(); return }
   if(t.dataset.bfopen){ bfOpen = true; render(); return }
   if(t.dataset.bfsetup){
@@ -2052,7 +2082,7 @@ function ovWeekTag(note, w){
   return w===1 ? "Start" : "";
 }
 function overviewHTML(fresh){
-  const P = S.plan, a = P.answers || {}, start = S.settings.start, end = addDays(start, 27);
+  const P = S.plan, a = P.answers || {}, start = S.settings.start, end = planDate(27);
   const fmt = (d, o) => parse(d).toLocaleDateString(undefined, o || {weekday:"short", month:"short", day:"numeric"});
   const train = P.days.filter(d=>!d.rest), nTrain = train.length, mins = a.time ? (a.time==="75" ? "75+" : a.time) : "";
   const track = a.track || "lift", recovery = P.mode === "recovery";
@@ -2094,7 +2124,7 @@ function overviewHTML(fresh){
   const rows = [1,2,3,4].map(w=>{
     const tag = ovWeekTag(P.weekNotes && P.weekNotes[w-1], w), light = tag === "Deload";
     const cells = P.days.map((d,i)=>{
-      const date = addDays(start, (w-1)*7 + i), on = !d.rest;
+      const date = planDate((w-1)*7 + i), on = !d.rest;
       const nm = on ? OV_SHORT(d.name) : "Rest";
       return `<button type="button" class="${on?"on":"off"}${on&&light?" light":""}${date===today?" today":""}" data-ovday="${date}" aria-label="${esc(fmt(date,{weekday:"long",month:"long",day:"numeric"}))}: ${esc(on ? d.name : "Rest or easy recovery")}"><span class="d">${esc(fmt(date,{day:"numeric"}))}</span><span class="n">${esc(nm)}</span></button>`;
     }).join("");
@@ -2401,10 +2431,134 @@ $("#builder").addEventListener("change", e=>{
   e.target.closest("label").classList.toggle("got", e.target.checked); cacheLocal();
 });
 
-/* ---------- progress: weekly recap, records, streaks ---------- */
+
+/* ---------- sick days, trips, goal forecast (logic in life.js) ---------- */
+// the calendar date of plan day k (0 = the start), skipping days the plan was paused for sickness
+function planDate(k){ const P = pausedDays(); let d = S.settings.start, n = 0; for(let i=0;i<400;i++){ if(!P.has(d)){ if(n===k) return d; n++; } d = addDays(d,1); } return addDays(S.settings.start, k); }
+function sickCard(d){
+  const run = LF.runOn(S.days, d), len = run ? run.len : 1, today = d===todayStr();
+  const txt = len >= LF.PAUSE_AT
+    ? `Rest up. That's ${len} sick days in a row, so your plan is paused. When you're better, you'll pick up right where you left off, with a lighter first session to ease back in.`
+    : `Rest up and get better. Sick days never count against you. If you're out ${LF.PAUSE_AT} or more days in a row, your plan pauses and picks up where you left off.`;
+  return `<div class="tcard sickcard"><div class="th"><b>Sick day</b><span>${today?"Today":esc(sd(d))}</span></div><p>${esc(txt)}</p>
+    <div class="acts"><button class="linkbtn go" data-act="sick-clear">I'm feeling better</button><button class="linkbtn" data-act="sick-set" data-lvl="mild">Just a little off? Make it a light day</button></div></div>`;
+}
+function sickLink(){ return S.plan && !sickOn(cur) ? `<div class="acts" style="margin-top:14px"><button class="linkbtn" data-act="sick-open">Feeling sick? Log a sick day</button></div>` : ""; }
+// one line about today's lighter sets, or "" for a normal day
+function lifeNote(d){
+  if(sickOn(d)==="mild") return "Light day: sets are cut to about 60%. This workout is optional, and skipping it won't count against you.";
+  const f = setFactorOn(d);
+  if(f > 0 && f < 1) return `Welcome back. Sets are cut to about ${Math.round(f*100)}% today so you ease back in.`;
+  return "";
+}
+function lifeBanner(d){
+  const n = lifeNote(d), trip = tripOn(d), bits = [];
+  if(n) bits.push(`<p>${esc(n)}${sickOn(d)==="mild"?` <button class="linkbtn" data-act="sick-clear">Clear</button>`:""}</p>`);
+  if(trip) bits.push(`<p>On the road${trip.place?` in ${esc(trip.place)}`:""} until ${esc(sd(trip.to))}. Exercises that need equipment you won't have are swapped to the closest match.</p>`);
+  return bits.length ? `<div class="tcard lifenote">${bits.join("")}</div>` : "";
+}
+
+/* trips: dates, a place and the equipment you'll have */
+const TRIP_EQ = [["gym","Full gym"],["bb","Barbell and rack"],["db_light","Dumbbells (light set)"],["db_full","Dumbbells (full set)"],["bench","Bench"],["cab","Cables or machines"],["pu","Pull-up bar"],["band","Resistance bands"],["mb","Medicine ball or slam ball"],["kb","Kettlebells"]];
+function tripGear(t){ const p = t.picks || []; if(p.includes("gym")) return "Full gym"; const l = TRIP_EQ.filter(([k])=>p.includes(k)).map(x=>x[1].replace(/ \(.*\)/,"").toLowerCase()); return l.length ? l.join(", ").replace(/^./, c=>c.toUpperCase()) : "Bodyweight only"; }
+function tripsCard(){
+  if(!S.plan) return "";
+  const t = todayStr(), list = (S.trips||[]).filter(x=>x.to >= t).sort((a,b)=>a.from<b.from?-1:1);
+  return `<div class="tcard trips"><div class="th"><b>Trips</b></div>
+    ${list.length ? `<ul class="log">${list.map(x=>`<li><span><b>${esc(x.place||"Trip")}</b> · ${esc(sd(x.from))}${x.to!==x.from?` – ${esc(sd(x.to))}`:""}<br><small>${esc(tripGear(x))}</small></span><button class="linkbtn" data-trip="edit" data-id="${esc(x.id)}">Edit</button></li>`).join("")}</ul>`
+      : `<p>Traveling soon? Add your trip and Adonis swaps exercises to fit the equipment you'll have there.</p>`}
+    <button class="linkbtn go" data-trip="add">Add a trip</button></div>`;
+}
+function tripForm(t){
+  t = t || {picks:[]};
+  const saved = LF.places(S.trips).filter(p=>!t.id || p.place.toLowerCase() !== String(t.place||"").trim().toLowerCase());
+  return `<p class="sub">Adonis swaps any exercise that needs equipment you won't have for the closest one you can do.</p>
+    <div class="card"><div class="row">
+      <div class="field wide"><label for="trip-place">Where</label><input id="trip-place" maxlength="60" placeholder="e.g. Denver, the in-laws' house" value="${esc(t.place||"")}"></div>
+      <div class="field" style="grid-column:span 2"><label for="trip-from">From</label><input id="trip-from" type="date" value="${esc(t.from||"")}"></div>
+      <div class="field" style="grid-column:span 2"><label for="trip-to">To</label><input id="trip-to" type="date" value="${esc(t.to||"")}"></div>
+    </div>
+    ${saved.length?`<p class="tip">Been there before? <span class="chips">${saved.map((p,i)=>`<button class="chip" data-tripplace="${i}">${esc(p.place)}</button>`).join("")}</span></p>`:""}
+    <h3 class="ch" style="margin-top:12px">What will you have?</h3><p class="tip" style="margin-top:0">Leave everything unchecked for bodyweight only.</p>
+    <div id="trip-eq">${TRIP_EQ.map(([k,l])=>`<label class="chk"><input type="checkbox" value="${k}"${(t.picks||[]).includes(k)?" checked":""}><span>${esc(l)}</span></label>`).join("")}</div>
+    <div class="err" id="triperr" role="alert"></div>
+    <button class="primary" data-trip="save"${t.id?` data-id="${esc(t.id)}"`:""}>Save trip</button>
+    ${t.id?`<button class="primary" data-trip="del" data-id="${esc(t.id)}" ${GHOST} style="margin-top:8px">Delete trip</button>`:""}</div>`;
+}
+let TRIP_SAVED = [];
+document.addEventListener("click", e=>{
+  const t = e.target.closest("[data-trip],[data-tripplace],[data-act=sick-open],[data-act=sick-set],[data-act=sick-clear],[data-act=goal-real],[data-act=see-forecast]"); if(!t) return;
+  const act = t.dataset.act;
+  if(act==="sick-open"){ openSheet("How are you feeling?", `<p class="sub">Sick days never count against you.</p>
+      <div class="card"><button class="primary" data-act="sick-set" data-lvl="rest">I need to rest today</button>
+      <p class="tip">No workout today. If you're out ${LF.PAUSE_AT} or more days in a row, your plan pauses and picks up where you left off, with a lighter first session back.</p>
+      <button class="primary" data-act="sick-set" data-lvl="mild" ${GHOST}>A little under the weather</button>
+      <p class="tip">Symptoms above the neck, like a stuffy nose? Today's workout is optional, with about 40% fewer sets.</p></div>`); return; }
+  if(act==="sick-set"){ day(cur).sick = t.dataset.lvl==="mild" ? "mild" : "rest"; saveDay(cur); cacheLocal(); if(!$("#builder").hidden) closeBuilder(); else render(); return; }
+  if(act==="sick-clear"){ delete day(cur).sick; saveDay(cur); cacheLocal(); render(); return; }
+  if(act==="goal-real"){ S.settings.goalDate = t.dataset.d; saveSettings(); render(); return; }
+  if(act==="see-forecast"){ tab = "body"; bsub = "progress"; render(); window.scrollTo(0,0); return; }
+  if(t.dataset.tripplace!=null){ const p = TRIP_SAVED[+t.dataset.tripplace]; if(!p) return; $("#trip-place").value = p.place;
+    document.querySelectorAll("#trip-eq input").forEach(i=>{ i.checked = p.picks.includes(i.value); }); return; }
+  const k = t.dataset.trip;
+  if(k==="add" || k==="edit"){ const tr = k==="edit" ? (S.trips||[]).find(x=>x.id===t.dataset.id) : null;
+    TRIP_SAVED = LF.places(S.trips).filter(p=>!tr || p.place.toLowerCase() !== String(tr.place||"").trim().toLowerCase());
+    openSheet(tr ? "Edit trip" : "Add a trip", tripForm(tr)); return; }
+  if(k==="del"){ S.trips = (S.trips||[]).filter(x=>x.id!==t.dataset.id); cacheLocal(); closeBuilder(); return; }
+  if(k==="save"){
+    const from = $("#trip-from").value, to = $("#trip-to").value || from, err = $("#triperr");
+    if(!from){ err.textContent = "Pick the day you leave."; return; }
+    if(to < from){ err.textContent = "The return date is before the day you leave."; return; }
+    if(LF.daysBetween(to, from) > 90){ err.textContent = "Trips can be up to 90 days. For a longer move, rebuild your plan with your new equipment."; return; }
+    const picks = [...document.querySelectorAll("#trip-eq input:checked")].map(i=>i.value);
+    const trip = {id: t.dataset.id || ("t" + Date.now().toString(36)), place: $("#trip-place").value.trim(), from, to, picks, eq: LF.tripEq(picks)};
+    S.trips = (S.trips||[]).filter(x=>x.id!==trip.id).concat(trip); cacheLocal(); closeBuilder(); return;
+  }
+});
+
+/* goal forecast: weight and calculated body fat trends against the goal (no pop-ups; a card and a line in the weekly recap) */
+function forecastOn(){ const s = S.settings; return !isPregnant() && (num(s.goalWeight) > 0 || num(s.goalBf) > 0); }
+function forecastData(){
+  const s = S.settings, t = todayStr(), ws = weights();
+  let weight = ws.length ? (avg7(ws, t) ?? ws[ws.length-1].w) : null, weightRate = null;
+  if(ws.length >= 2){ const span = Math.min(28, diff(t, ws[0].d)); const then = span >= 14 ? avg7(ws, addDays(t, -span)) : null; if(then != null) weightRate = (weight - then) / (span/7); }
+  const bfPts = seriesOf("bf"), fit = slopePerDay(bfPts);
+  const bf = fit ? fit.at : bfPts.length ? bfPts[bfPts.length-1].v : null, bfRate = fit ? fit.slope*7 : null;
+  return {today:t, weight, weightRate, bf, bfRate, goalWeight:num(s.goalWeight), goalBf:num(s.goalBf), goalDate:s.goalDate||""};
+}
+function forecastLine(){
+  const s = S.settings, f = LF.forecast(forecastData());
+  const goals = [num(s.goalWeight)>0?`${num(s.goalWeight)} lb`:"", num(s.goalBf)>0?`${num(s.goalBf)}% body fat`:""].filter(Boolean).join(" and ");
+  const recentSick = Object.keys(S.days).some(k=>S.days[k] && S.days[k].sick && diff(todayStr(), k) >= 0 && diff(todayStr(), k) <= 14);
+  return LF.forecastText(f, {fmt: sd, goals, goalDate: s.goalDate, recentSick});
+}
+const FC_WORD = {onpace:"On pace", ahead:"Ahead of schedule", later:"On the way", moving:"On the way", steady:"Holding", reached:"At your goal", data:"Getting started"};
+function forecastCard(){
+  if(!forecastOn()) return "";
+  const f = LF.forecast(forecastData());
+  return `<div class="tcard"><div class="th"><b>Goal forecast</b><span>${esc(FC_WORD[f.status]||"")}</span></div><p>${esc(forecastLine())}</p>
+    <button class="linkbtn" data-act="see-forecast">See your trends</button></div>`;
+}
+// day-one reality check: what the goal takes, and a realistic date if it's a stretch
+function realityHTML(){
+  if(!forecastOn() || !S.settings.goalDate) return "";
+  const d = forecastData(), s = S.settings, ws = weights();
+  if(["onpace","ahead","reached"].includes(LF.forecast(d).status)) return "";   // a real trend beats the rule of thumb
+  const r = LF.reality({today:d.today, weight: d.weight || (ws.length ? ws[ws.length-1].w : num(S.profile.weight)), bf: d.bf, goalWeight: num(s.goalWeight) || d.weight,
+    goalBf: num(s.goalBf), goalDate: s.goalDate, level: +(S.plan && S.plan.answers && S.plan.answers.experience) || 2});
+  if(!r) return "";
+  const what = [r.fatLoss > 0 ? `lose about ${r.fatLoss} lb of fat` : "", r.leanGain > 0 ? `gain about ${r.leanGain} lb of lean mass` : ""].filter(Boolean).join(" and ");
+  const takes = what ? `Getting there means you'd ${what} in about ${r.months} months. ` : "";
+  if(r.ok) return `<p class="tip">${esc(takes)}That's a realistic target for your timeline.</p>`;
+  const lean = r.leanGain > 0 ? `Muscle usually builds at about ${r.leanPerMonth} lb a month at your experience level, so this is an ambitious target. ` : "That's faster than you can lose fat without risking muscle, so this is an ambitious target. ";
+  return `<p class="tip">${esc(takes + lean)}A realistic date is around ${esc(parse(r.suggest).toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"}))}. You can keep yours as a stretch goal, or switch.</p>
+    <button class="linkbtn go" data-act="goal-real" data-d="${esc(r.suggest)}">Use ${esc(sd(r.suggest))}</button>`;
+}
+
+/* ---------- progress: weekly recap, records, consistency ---------- */
 function weekStartOf(d){ const x = parse(d); return addDays(d, -((x.getDay()+6)%7)); }  // Monday
 function didWorkout(d){ const D = S.days[d]; if(!D) return false; return !!D.complete || Object.values(D.lifts||{}).some(sets=>sets.some(s=>s.done)) || Object.values(D.cardio||{}).some(c=>c.done); }
-function plannedOn(d){ if(!S.plan || d < S.settings.start) return false; return isTrainingDay(d); }
+function plannedOn(d){ if(!S.plan || d < S.settings.start || sickOn(d)) return false; return isTrainingDay(d); }   // sick days never count against you
 function proteinHit(d){ const D = S.days[d]; if(!D || !D.food || !D.food.length) return false; return totals(D).p >= 0.9 * targetsOn(d).protein; }
 function prsBetween(from, to){
   // best new record per exercise in the date range, beating everything before that day
@@ -2436,15 +2590,19 @@ function weekStats(ws){
   return {days, done, planned, prot, logged, change, goal, prs: prsBetween(ws, end)};
 }
 function streaks(){
-  // weeks in a row with every planned workout done (this week counts once it's met)
-  let wk = 0, ws = weekStartOf(todayStr());
-  const met = w => { const ds = [0,1,2,3,4,5,6].map(i=>addDays(w,i)); const pl = ds.filter(plannedOn).length; return pl > 0 && ds.filter(didWorkout).length >= pl; };
-  if(met(ws)) wk++;
-  for(let i=1;i<104;i++){ const w = addDays(ws, -7*i); if(w < weekStartOf(S.settings.start || todayStr())) break; if(met(w)) wk++; else break; }
+  // consistent weeks in a row: 80% of planned workouts, sick days don't count, one grace week every 8 (life.js)
+  const cw = weekStartOf(todayStr()), weeks = [];
+  let w = weekStartOf(S.settings.start || todayStr());
+  if(diff(cw, w) > 7*104) w = addDays(cw, -7*104);
+  for(; w <= cw; w = addDays(w, 7)){
+    const ds = [0,1,2,3,4,5,6].map(i=>addDays(w,i));
+    weeks.push({planned: ds.filter(plannedOn).length, done: ds.filter(didWorkout).length, current: w===cw});
+  }
+  const c = LF.consistency(weeks), wk = c.weeks;
   // days in a row hitting protein (today counts once it's hit)
   let pd = 0, d = proteinHit(todayStr()) ? todayStr() : addDays(todayStr(), -1);
   while(proteinHit(d) && pd < 999){ pd++; d = addDays(d, -1); }
-  return {weeks: wk, protein: pd};
+  return {weeks: wk, protein: pd, graceUsedRecently: c.graceUsedRecently};
 }
 function weightLine(st){
   if(st.change==null) return "Log your weight a few mornings a week to see your trend.";
@@ -2465,9 +2623,9 @@ function recapCard(){
       <div><b>${st.done}${st.planned?` of ${st.planned}`:""}</b><span>workouts done</span></div>
       <div><b>${st.prs.length}</b><span>new record${st.prs.length===1?"":"s"}</span></div>
       <div><b>${st.logged?`${st.prot} of ${st.logged}`:"—"}</b><span>logged days at protein goal</span></div>
-      <div><b>${sk.weeks}</b><span>week streak</span></div>
+      <div><b>${sk.weeks}</b><span>consistent week${sk.weeks===1?"":"s"}</span></div>
     </div>
-    <ul>${st.prs.slice(0,3).map(x=>`<li>${esc(x.name)}: ${esc(x.w)} lb × ${esc(x.r)}</li>`).join("")}<li>${esc(weightLine(st))}</li></ul>
+    <ul>${st.prs.slice(0,3).map(x=>`<li>${esc(x.name)}: ${esc(x.w)} lb × ${esc(x.r)}</li>`).join("")}<li>${esc(weightLine(st))}</li>${forecastOn()?`<li>${esc(forecastLine())}</li>`:""}</ul>
     <button class="linkbtn" data-act="recap-done" data-w="${lastWs}">Got it</button></div>`;
 }
 document.addEventListener("click", e=>{ const t = e.target.closest('[data-act="recap-done"]'); if(!t) return; S.recapSeen[t.dataset.w] = true; cacheLocal(); render(); });
@@ -2480,8 +2638,8 @@ function heroHTML(){ return tab==="today" ? heroToday() : tab==="train" ? heroTr
 function heroToday(){
   const p = S.plan ? progInfo(cur) : null, P = p && !p.before ? dayDef(p.dn) : null, isToday = cur===todayStr();
   const dn = parse(cur).toLocaleDateString(undefined,{weekday:"long", month:"short", day:"numeric"});
-  const head = !S.plan ? "Let's get rolling" : p.before ? "Almost go time" : P.rest ? (P.name==="Rest" ? "Rest day" : "Recovery day") : `${P.name} day`;
-  const tag = TAGLINES[(diff(cur, "2026-01-01") % TAGLINES.length + TAGLINES.length) % TAGLINES.length];
+  const head = !S.plan ? "Let's get rolling" : p.before ? "Almost go time" : sickOn(cur)==="rest" ? "Sick day" : P.rest ? (P.name==="Rest" ? "Rest day" : "Recovery day") : `${P.name} day`;
+  const tag = sickOn(cur)==="rest" ? "Rest is part of the plan." : TAGLINES[(diff(cur, "2026-01-01") % TAGLINES.length + TAGLINES.length) % TAGLINES.length];
   const kick = !S.plan ? "Welcome to Adonis" : p.before ? "Starting soon" : `Week ${p.week} of 4${isToday?"":` · ${dn}`}`;
   return `<span class="hk">${esc(kick)}</span><div class="hh">${esc(head)}</div><p class="hs">${esc(tag)}</p>`;
 }
@@ -2490,9 +2648,10 @@ function heroTrain(){
   const p = progInfo(cur);
   if(p.before) return `<span class="hk">Starting soon</span><div class="hh">Almost go time</div>`;
   const P = dayDef(p.dn), D = day(cur), kick = `${p.cycle>1?`Round ${p.cycle} · `:""}Week ${p.week} · Day ${p.dn}`;
+  if(sickOn(cur)==="rest") return `<span class="hk">${esc(kick)}</span><div class="hh">Sick day</div><p class="hs">Rest up. Your plan has you covered.</p>`;
   if(P.rest) return `<span class="hk">${esc(kick)}</span><div class="hh">${esc(P.name==="Rest"?"Rest day":"Active recovery")}</div>`;
   const lifts = P.ex.filter(x=>x.type!=="cardio" && x.type!=="circuit");
-  const sets = lifts.reduce((a,e)=>a+rx(e,p.week).s,0);
+  const sets = lifts.reduce((a,e)=>a+rx(e,p.week,cur).s,0);
   const done = Object.values(D.lifts||{}).reduce((a,ss)=>a+ss.filter(x=>x.done).length,0);
   const btn = D.complete ? `<p class="hs">Workout finished ✓</p>` : lifts.length ? `<button class="primary start" id="focusgo">${done?"Resume workout":"Start workout"}</button>` : "";
   return `<span class="hk">${esc(kick)}</span><div class="hh">${esc(P.name)}</div>
@@ -2539,17 +2698,20 @@ function renderToday(){
   // workout
   if(!S.plan) h += `<div class="tcard"><div class="th"><b>Your training plan</b></div><p>Answer a few quick questions and Adonis builds a 4-week plan around your goal, schedule and equipment.</p><button class="primary" id="build" style="background:var(--protein);color:#fff">Build my plan</button></div>`;
   else if(p.before) h += `<div class="tcard"><div class="th"><b>Training</b></div><p>Your program starts ${esc(parse(S.settings.start).toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"}))}.</p></div>`;
+  else if(sickOn(cur)==="rest") h += sickCard(cur);
   else if(P.rest){
     const did = D.recovery || [];
-    h += `<div class="tcard"><div class="th"><b>Recovery</b>${did.length?`<span>${esc(did.join(", "))} ✓</span>`:""}</div><p>Keep it easy today: a walk, some stretching or mobility.</p><button class="linkbtn" data-gotab="train">Log what you did</button></div>`;
+    h += `<div class="tcard"><div class="th"><b>Recovery</b>${did.length?`<span>${esc(did.join(", "))} ✓</span>`:""}</div><p>Keep it easy today: a walk, some stretching or mobility.</p><div class="acts"><button class="linkbtn" data-gotab="train">Log what you did</button><button class="linkbtn" data-act="sick-open">Feeling sick?</button></div></div>`;
   } else {
     const L = focusList(), total = L.reduce((a,x)=>a+x.R.s,0), done = L.reduce((a,x)=>a+D.lifts[x.name].slice(0,x.R.s).filter(s=>s.done).length,0);
     const others = P.ex.length - L.length, prs = Object.values(D.lifts).reduce((a,ss)=>a+ss.filter(s=>s.pr).length,0);
     const status = D.complete ? `Finished ✓${prs?` · ${prs} new record${prs>1?"s":""}`:""}` : done ? `${done} of ${total} sets done` : `${L.length} exercises · ${total} sets${others?` + ${others} more`:""}`;
+    const trip = tripOn(cur), lite = lifeNote(cur);
     h += `<div class="tcard"><div class="th"><b>Workout</b><span>${esc(status)}</span></div>
       <p>${esc(L.slice(0,4).map(x=>x.name).join(", "))}${L.length>4?", and more":""}.</p>
+      ${trip?`<p class="tip">On the road${trip.place?` in ${esc(trip.place)}`:""}: exercises are swapped to fit your equipment.</p>`:""}${lite?`<p class="tip">${esc(lite)}</p>`:""}
       ${D.complete ? `<button class="linkbtn" data-gotab="train">See what you did</button>`
-        : `<button class="primary start" id="focusgo">${done?"Resume workout":"Start workout"}</button><div class="acts"><button class="linkbtn" data-gotab="train">See the full list</button></div>`}</div>`;
+        : `<button class="primary start" id="focusgo">${done?"Resume workout":"Start workout"}</button><div class="acts"><button class="linkbtn" data-gotab="train">See the full list</button><button class="linkbtn" data-act="sick-open">Feeling sick?</button></div>`}</div>`;
   }
 
   // food
@@ -2567,15 +2729,20 @@ function renderToday(){
   const ws = weights(), a7 = avg7(ws, cur);
   h += `<div class="tcard"><div class="th"><b>Check-in</b>${a7!=null?`<span>7-day average ${a7.toFixed(1)} lb</span>`:""}</div>
     <div class="ci"><input id="bw" inputmode="decimal" placeholder="Weight (lb)" value="${esc(D.weight)}" aria-label="Today's weight in pounds"><button class="linkbtn" data-gotab="body">Trends</button></div></div>`;
+  h += forecastCard();
 
   // this week
   if(S.plan){
     const wsd = weekStartOf(cur), st = weekStats(wsd), sk = streaks();
-    const dots = st.days.map(d=>{ const pl = plannedOn(d), did = didWorkout(d), past = d < todayStr();
-      const cls = [pl?"plan":"", did?"did":"", pl && !did && past ? "miss":"", d===todayStr()?"now":""].join(" ");
-      return `<div class="${cls}">${esc(parse(d).toLocaleDateString(undefined,{weekday:"narrow"}))}<i>${did?"✓":""}</i></div>`; }).join("");
+    const dots = st.days.map(d=>{ const pl = plannedOn(d), did = didWorkout(d), past = d < todayStr(), sk_ = !did && sickOn(d);
+      const cls = [pl?"plan":"", did?"did":"", sk_?"sick":"", pl && !did && past ? "miss":"", d===todayStr()?"now":""].join(" ");
+      return `<div class="${cls}">${esc(parse(d).toLocaleDateString(undefined,{weekday:"narrow"}))}<i${sk_?' aria-label="Sick day"':""}>${did?"✓":sk_?"–":""}</i></div>`; }).join("");
+    const need = st.planned ? LF.weekNeed(st.planned) : 0;
+    const prot = st.logged ? ` Protein goal hit ${st.prot} day${st.prot===1?"":"s"} this week.` : "";
+    const run = sk.weeks ? `🔥 ${sk.weeks} consistent week${sk.weeks>1?"s":""} in a row.${sk.graceUsedRecently?" One rough week was covered by your grace week, so your run is safe.":""}`
+      : need ? `Get ${need} of ${st.planned} workouts in this week to start a consistent run.` : "";
     h += `<div class="tcard"><div class="th"><b>This week</b><span>${st.done} of ${st.planned} workouts</span></div><div class="wk">${dots}</div>
-      <p style="margin:0">${sk.weeks?`🔥 ${sk.weeks}-week streak. `:""}${sk.protein?`${sk.protein} day${sk.protein>1?"s":""} in a row at your protein goal.`:""}${!sk.weeks&&!sk.protein?"Hit every planned workout this week to start a streak.":""}</p></div>`;
+      <p style="margin:0">${run}${prot}</p></div>`;
   }
   return h;
 }
@@ -2592,7 +2759,7 @@ function focusList(){
   const P = dayDef(p.dn); if(!P || P.rest) return [];
   const D = day(cur);
   return P.ex.filter(e=>e.type!=="cardio" && e.type!=="circuit").map(e=>{
-    const name = shown(e, D), R = rx(e, p.week);
+    const name = shown(e, D), R = rx(e, p.week, cur);
     const sets = D.lifts[name] || []; while(sets.length < R.s) sets.push({w:"",r:"",done:false}); D.lifts[name] = sets;
     return {e, name, R};
   });
@@ -3393,11 +3560,13 @@ function estimateFor(main, days){
   return r;
 }
 const calOf = t => Math.round(num(t.protein)*4 + num(t.carbs)*4 + num(t.fat)*9);
-function clientDays(days, T){
+function clientDays(days, T, trips){
   let h = "";
   for(let i=0;i<7;i++){
     const d = addDays(todayStr(), -i), D = days[d], parts = [];
     if(D && D.food && D.food.length){ const t = totals(D); parts.push(`${t.cal.toLocaleString()} cal`, `${Math.round(t.p)}${T?` of ${T.protein}`:""} g protein`); }
+    if(D && D.sick) parts.push(D.sick==="mild" ? "Sick (light day)" : "Sick (resting)");
+    const trip = LF.tripOn(trips, d); if(trip) parts.push(`Traveling${trip.place?`: ${trip.place}`:""}`);
     if(D && D.complete) parts.push("Workout done");
     if(D && num(D.weight) > 0) parts.push(`${num(D.weight)} lb`);
     h += `<div class="client"><div class="nm"><b>${esc(i===0 ? "Today" : parse(d).toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"}))}</b><small>${esc(parts.length ? parts.join(" · ") : "Nothing logged")}</small></div></div>`;
@@ -3432,7 +3601,7 @@ function renderClient(){
       <button class="primary" type="submit">${co.note ? "Update note" : "Pin note"}</button>
     </form>
     ${co.note ? `<button class="primary" data-coach="clearnote" ${GHOST}>Clear note</button>` : ""}
-    <h3>Last 7 days</h3><div class="card">${clientDays(d.days, T)}</div></div>`);
+    <h3>Last 7 days</h3><div class="card">${clientDays(d.days, T, d.main && d.main.trips)}</div></div>`);
 }
 document.addEventListener("input", e=>{
   if(!e.target.matches("#ct-p,#ct-c,#ct-f")) return;
