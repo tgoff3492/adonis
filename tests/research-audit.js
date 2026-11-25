@@ -325,7 +325,8 @@ function auditWorkouts() {
     // time: each lifting day at realistic rest
     lifting.forEach((d, i) => {
       if (!d.ex || d.ex.some(e => e.type)) return;
-      const mins = 8 + d.ex.reduce((s, e) => s + (e.wk[1].s || 0) * (40 + restOf(e.n, a.goal)) / 60, 0);
+      // supersets share one rest per round (the app's own estimate does the same)
+      const mins = E.sessionMinutes(d.ex, e => e.wk[1].s || 0, e => restOf(e.n, a.goal));
       rec("w-time", mins <= +a.time + 10 ? "pass" : mins <= +a.time + 15 ? "warn" : "fail", `${tag}, ${d.name}: about ${Math.round(mins)} min`);
     });
 
