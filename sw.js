@@ -1,6 +1,6 @@
 // Adonis offline cache. Bump VERSION whenever you upload a new index.html.
-const VERSION = "adonis-v43";
-const CORE = ["./", "index.html", "engine.js", "nutrition.js", "meals.js", "foods.js", "coach.js", "videos.js", "demos.js", "firebase-config.js", "vendor/firebase.js", "cloud.js", "vendor/zxing.min.js", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
+const VERSION = "adonis-v44";
+const CORE = ["./", "index.html", "engine.js", "life.js", "nutrition.js", "meals.js", "foods.js", "coach.js", "videos.js", "demos.js", "firebase-config.js", "vendor/firebase.js", "cloud.js", "vendor/zxing.min.js", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
 self.addEventListener("install", e => {
   // cache: "reload" skips the browser's own HTTP cache, so a new version never gets filled with yesterday's files
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(CORE.map(u => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
